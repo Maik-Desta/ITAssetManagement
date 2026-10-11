@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}Moves & disposals{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>Moves, repairs, retirements &amp; disposals</h1><p>Maker-checker approval per the approval matrix · raise a change from the asset page</p></div></div>
+<div class="tabs">
+  <a href="/changes?view=open" class="{{ 'active' if view == 'open' }}">Open</a>
+  <a href="/changes?view=mine" class="{{ 'active' if view == 'mine' }}">Awaiting my approval</a>
+  <a href="/changes?view=all" class="{{ 'active' if view == 'all' }}">All</a>
+  <a href="/changes?view=finance" class="{{ 'active' if view == 'finance' }}">Disposals awaiting Finance</a>
+</div>
+<section class="card"><div class="table-wrap"><table>
+  <thead><tr><th>Reference</th><th>Action</th><th>Asset</th><th>From → to</th><th>Status</th><th>Approvals</th><th>Requested</th></tr></thead>
+  <tbody>{% for c in rows %}
+  <tr><td><a href="/changes/{{ c.id }}">{{ c.reference }}</a></td><td>{{ CHANGE_LABELS[c.change_type] }}</td>
+    <td><a class="mono" href="/assets/{{ c.asset.id }}">{{ c.asset.asset_number }}</a></td>
+    <td>{{ c.from_branch.code }}{% if c.to_branch %} → {{ c.to_branch.code }}{% elif c.to_location %} → {{ c.to_location.room }}{% endif %}</td>
+    <td>{{ c.status.replace("_", " ").title() }}</td>
+    <td>{% for a in c.approvals %}<span class="badge"><span class="dot {{ 'good' if a.decision == 'APPROVED' else 'critical' if a.decision == 'REJECTED' else '' }}"></span>{{ a.required_role.replace("_", " ").title() }}</span> {% endfor %}</td>
+    <td class="nowrap">{{ c.created_at | dt("%Y-%m-%d") }} · {{ c.requester.full_name }}</td></tr>
+  {% else %}<tr><td colspan="7" class="muted">Nothing here.</td></tr>{% endfor %}</tbody></table></div></section>
+{% endblock %}

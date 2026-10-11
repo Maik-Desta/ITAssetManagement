@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block title %}Notification outbox{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>Notification outbox</h1><p>Every e-mail, SMS, voice and chat message the platform sends. Channels without a configured gateway stay as OUTBOX_ONLY.</p></div></div>
+<section class="card"><div class="table-wrap"><table>
+  <thead><tr><th>Time</th><th>Channel</th><th>Recipient</th><th>Subject</th><th>Status</th></tr></thead>
+  <tbody>{% for n in rows %}<tr><td class="nowrap">{{ n.created_at | dt }}</td><td>{{ n.channel }}</td><td class="small">{{ n.recipient }}</td>
+    <td>{{ n.subject }}{% if n.alert_id %} <a class="small" href="/alerts/{{ n.alert_id }}">alert</a>{% endif %}</td><td>{{ n.status.replace("_", " ").title() }}{% if n.error %} <span class="fail small">{{ n.error }}</span>{% endif %}</td></tr>
+  {% else %}<tr><td colspan="5" class="muted">No notifications.</td></tr>{% endfor %}</tbody></table></div></section>
+{% endblock %}

@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% from "macros.html" import csrf, status_badge with context %}
+{% block title %}{{ req.reference }}{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>{{ req.reference }} · {{ req.quantity }} × {{ TYPE_LABELS[req.asset_type] }}</h1>
+  <p>For {{ req.branch.code }} {{ req.branch.name }} · {{ req.status.replace("_", " ").title() }}</p></div></div>
+<div class="steps">{% set order = ["PENDING_APPROVAL", "APPROVED", "ORDERED", "RECEIVED"] %}
+  {% for st in order %}<span class="{{ 'current' if st == req.status else 'done' if req.status in order and loop.index0 < order.index(req.status) }}">{{ ["1–2 Request & approve", "Approved", "3 Procure (PO)", "4 Received & tagged"][loop.index0] }}</span>{% endfor %}
+  {% if req.status == "REJECTED" %}<span class="current">Rejected</span>{% endif %}</div>
+<div class="grid grid-2">
+<section class="card">
+  <dl class="kv">
+    <dt>Requested by</dt><dd>{{ req.requester.full_name }} · {{ req.created_at | dt }}</dd>
+    <dt>Model</dt><dd>{{ req.model.display if req.model else "—" }}</dd>
+    <dt>Justification</dt><dd>{{ req.justification }}</dd>
+    <dt>Estimated cost</dt><dd>{{ "{:,.2f}".format(req.estimated_cost) if req.estimated_cost else "—" }}</dd>
+    <dt>IT approval</dt><dd>{{ (req.it_approver.full_name ~ " · " ~ (req.it_approved_at | dt)) if req.it_approved_at else "pending" }}</dd>
+    <dt>Budget approval</dt><dd>{{ (req.budget_approver.full_name ~ " · " ~ (req.budget_approved_at | dt)) if req.budget_approved_at else "pending" }}</dd>
+    <dt>PO / supplier</dt><dd>{{ req.po_number or "—" }} · {{ req.supplier or "—" }}</dd>
+    {% if req.rejection_reason %}<dt>Rejected</dt><dd>{{ req.rejection_reason }}</dd>{% endif %}
+  </dl>
+</section>
+<section class="card stack">
+  {% if req.status == "PENDING_APPROVAL" %}
+    {% if user.id == req.requester_id %}<p class="muted small">Maker-checker: you cannot approve your own request.</p>{% else %}
+    <div class="actions">
+      {% if can(user, "request.approve_it") and not req.it_approved_at %}<form method="post" action="/requests/{{ req.id }}/approve">{{ csrf() }}<input type="hidden" name="kind" value="it"><button class="btn primary" type="submit">Approve (IT)</button></form>{% endif %}
+      {% if can(user, "request.approve_budget") and not req.budget_approved_at %}<form method="post" action="/requests/{{ req.id }}/approve">{{ csrf() }}<input type="hidden" name="kind" value="budget"><button class="btn primary" type="submit">Approve (budget)</button></form>{% endif %}
+    </div>
+    {% if can(user, "request.approve_it") or can(user, "request.approve_budget") %}
+    <form method="post" action="/requests/{{ req.id }}/reject" class="actions">{{ csrf() }}<input name="reason" placeholder="Reason for rejection" required aria-label="Reason"><button class="btn danger" type="submit">Reject</button></form>
+    {% endif %}{% endif %}
+  {% elif req.status == "APPROVED" and can(user, "request.procure") %}
+    <h2>Raise purchase order</h2>
+    <form method="post" action="/requests/{{ req.id }}/po" class="stack">{{ csrf() }}
+      <div class="form-grid"><div class="field"><label for="po">PO number</label><input id="po" name="po_number" required></div>
+        <div class="field"><label for="sup">Supplier</label><input id="sup" name="supplier" required></div>
+        <div class="field"><label for="con">Warranty contract</label><select id="con" name="contract_id"><option value="">—</option>{% for c in contracts %}<option value="{{ c.id }}">{{ c.reference }} · {{ c.supplier }}</option>{% endfor %}</select></div></div>
+      <button class="btn primary" type="submit">Record PO</button></form>
+  {% elif req.status == "ORDERED" and can(user, "request.receive") %}
+    <h2>Receive &amp; tag</h2>
+    <p class="small secondary">Check goods against the PO. One serial number per line; an asset number is issued for each and the record is created 'In stock' at the central store.</p>
+    <form method="post" action="/requests/{{ req.id }}/receive" class="stack">{{ csrf() }}
+      <textarea name="serials" required placeholder="Serial numbers, one per line ({{ req.quantity - req.received_quantity }} outstanding)"></textarea>
+      <div class="field"><label for="uc">Unit cost</label><input id="uc" name="unit_cost" type="number" step="0.01"></div>
+      <button class="btn primary" type="submit">Receive</button></form>
+  {% else %}<p class="muted small">No action required from you.</p>{% endif %}
+  {% if received %}
+  <h2>Received assets</h2>
+  <table><tbody>{% for a in received %}<tr><td><a class="mono" href="/assets/{{ a.id }}">{{ a.asset_number }}</a></td><td class="mono small">{{ a.serial_number }}</td><td>{{ status_badge(a.status) }}</td><td>{{ a.branch.code }}</td></tr>{% endfor %}</tbody></table>
+  <p><a class="btn" href="/labels?ids={{ received | map(attribute='id') | join(',') }}">Print QR tags</a>
+    <span class="small muted">Next: raise a transfer from the central store to {{ req.branch.code }} on each asset.</span></p>
+  {% endif %}
+</section>
+</div>
+{% endblock %}

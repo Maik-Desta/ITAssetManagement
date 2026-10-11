@@ -1,0 +1,111 @@
+{% macro nav_link(href, label, path, count=None) -%}
+<a href="{{ href }}" class="{{ 'active' if path == href or (href != '/' and path.startswith(href ~ '/')) else '' }}">
+  <span>{{ label }}</span>{% if count %}<span class="badge">{{ count }}</span>{% endif %}
+</a>
+{%- endmacro %}
+
+{% macro csrf() -%}<input type="hidden" name="csrf_token" value="{{ csrf_token }}">{%- endmacro %}
+
+{% macro status_badge(status) -%}
+{%- set cls = {"ACTIVE": "good", "FAULTY": "critical", "MISSING": "critical", "UNDER_REPAIR": "warning",
+               "IN_TRANSIT": "info", "IN_STOCK": "", "RETIRED": "", "DISPOSED": ""}[status] -%}
+<span class="badge"><span class="dot {{ cls }}"></span>{{ STATUS_LABELS.get(status, status) }}</span>
+{%- endmacro %}
+
+{% macro oper_badge(state, monitored=True) -%}
+{%- if not monitored -%}<span class="muted small">not monitored</span>
+{%- else -%}
+{%- set cls = {"UP": "good", "DOWN": "critical", "DEGRADED": "warning", "UNKNOWN": ""}[state] -%}
+<span class="badge"><span class="dot {{ cls }}"></span>{{ state.title() }}</span>
+{%- endif -%}
+{%- endmacro %}
+
+{% macro sev(severity) -%}
+<span class="sev sev-{{ severity }}" title="{{ SEVERITY_LABELS.get(severity) }}">{{ severity }}</span>
+{%- endmacro %}
+
+{% macro branch_state(state) -%}
+{%- set m = {"online": ("good", "Online"), "degraded": ("warning", "Degraded"), "offline": ("critical", "Offline"),
+             "not_monitored": ("", "Not monitored")} -%}
+{%- set s = m.get(state, ("", state or "—")) -%}
+<span class="badge"><span class="dot {{ s[0] }}"></span>{{ s[1] }}</span>
+{%- endmacro %}
+
+{% macro simple_badge(text, cls="") -%}
+<span class="badge"><span class="dot {{ cls }}"></span>{{ text }}</span>
+{%- endmacro %}
+
+{% macro pager(page, size, total, qs) -%}
+{% if total > size %}
+<div class="actions small">
+  {% if page > 1 %}<a class="btn small" href="?{{ qs }}&page={{ page - 1 }}">← Previous</a>{% endif %}
+  <span class="muted">Page {{ page }} of {{ ((total - 1) // size) + 1 }}</span>
+  {% if page * size < total %}<a class="btn small" href="?{{ qs }}&page={{ page + 1 }}">Next →</a>{% endif %}
+</div>
+{% endif %}
+{%- endmacro %}
+
+{# Single-series column chart. rows: list of dicts; the chart title names the series (no legend box). #}
+{% macro column_chart(rows, label_key, value_key, unit="", aria="") -%}
+{%- set W, H, L, B, T = 360, 190, 34, 24, 18 -%}
+{%- set values = rows | map(attribute=value_key) | select("number") | list -%}
+{%- set top = nice_max(values | max if values else 0) -%}
+{%- set band = (W - L - 8) / (rows | length or 1) -%}
+{%- set bw = [24, band * 0.6] | min -%}
+<svg class="chart" viewBox="0 0 {{ W }} {{ H }}" role="img" aria-label="{{ aria }}">
+  {% for i in range(5) %}{% set v = top * i / 4 %}{% set y = H - B - (H - B - T) * i / 4 %}
+  <line class="gridline" x1="{{ L }}" x2="{{ W - 4 }}" y1="{{ y }}" y2="{{ y }}"/>
+  <text class="axis" x="{{ L - 6 }}" y="{{ y + 4 }}" text-anchor="end">{{ fmt_tick(v) }}</text>
+  {% endfor %}
+  {% for r in rows %}
+    {% set v = r[value_key] or 0 %}
+    {% set h = (H - B - T) * v / top %}
+    {% set x = L + band * loop.index0 + (band - bw) / 2 %}
+    <path class="bar" tabindex="0" d="{{ bar_path(x, H - B - h, bw, h) }}" data-tip="{{ r[label_key] }}: {{ v }}{{ unit }}"/>
+    {% if v %}<text class="value-label" x="{{ x + bw / 2 }}" y="{{ H - B - h - 5 }}" text-anchor="middle">{{ v }}</text>{% endif %}
+    <text class="axis" x="{{ x + bw / 2 }}" y="{{ H - 6 }}" text-anchor="middle">{{ r[label_key] }}</text>
+  {% endfor %}
+</svg>
+<details class="table-view"><summary>Table view</summary>
+<table><tbody>{% for r in rows %}<tr><td>{{ r[label_key] }}</td><td class="num">{{ r[value_key] if r[value_key] is not none else "—" }}{{ unit }}</td></tr>{% endfor %}</tbody></table>
+</details>
+{%- endmacro %}
+
+{# Single-series line chart with optional target hairline; gaps where the value is missing. #}
+{% macro line_chart(rows, label_key, value_key, unit="", target=None, aria="") -%}
+{%- set W, H, L, B, T = 360, 180, 34, 24, 16 -%}
+{%- set values = rows | map(attribute=value_key) | select("number") | list -%}
+{%- set top = nice_max([values | max if values else 0, target or 0] | max) -%}
+{%- set n = rows | length -%}
+{%- set step = (W - L - 16) / ((n - 1) or 1) -%}
+<svg class="chart" viewBox="0 0 {{ W }} {{ H }}" role="img" aria-label="{{ aria }}">
+  {% for i in range(5) %}{% set v = top * i / 4 %}{% set y = H - B - (H - B - T) * i / 4 %}
+  <line class="gridline" x1="{{ L }}" x2="{{ W - 4 }}" y1="{{ y }}" y2="{{ y }}"/>
+  <text class="axis" x="{{ L - 6 }}" y="{{ y + 4 }}" text-anchor="end">{{ fmt_tick(v) }}</text>
+  {% endfor %}
+  {% if target %}{% set ty = H - B - (H - B - T) * target / top %}
+  <line class="target" x1="{{ L }}" x2="{{ W - 4 }}" y1="{{ ty }}" y2="{{ ty }}"/>
+  <text class="target-label" x="{{ W - 6 }}" y="{{ ty - 4 }}" text-anchor="end">target {{ target }}{{ unit }}</text>
+  {% endif %}
+  {%- set ns = namespace(d="", pen=False) -%}
+  {%- for r in rows -%}
+    {%- if r[value_key] is not none -%}
+      {%- set x = L + step * loop.index0 -%}{%- set y = H - B - (H - B - T) * r[value_key] / top -%}
+      {%- set ns.d = ns.d ~ ("L" if ns.pen else "M") ~ ("%.1f,%.1f " | format(x, y)) -%}{%- set ns.pen = True -%}
+    {%- else -%}{%- set ns.pen = False -%}{%- endif -%}
+  {%- endfor %}
+  <path class="line" d="{{ ns.d }}"/>
+  {% for r in rows %}
+    {% set x = L + step * loop.index0 %}
+    {% if loop.index0 % 2 == (n - 1) % 2 %}<text class="axis" x="{{ x }}" y="{{ H - 6 }}" text-anchor="{{ 'end' if loop.last else 'middle' }}">{{ r[label_key] }}</text>{% endif %}
+    {% if r[value_key] is not none %}{% set y = H - B - (H - B - T) * r[value_key] / top %}
+    <circle class="marker" cx="{{ x }}" cy="{{ y }}" r="4" tabindex="0" data-tip="Week to {{ r[label_key] }}: {{ r[value_key] }}{{ unit }} ({{ r.count }} outages)"/>
+    {% if loop.last %}<text class="value-label" x="{{ x - 6 }}" y="{{ y - 9 }}" text-anchor="end">{{ r[value_key] }}{{ unit }}</text>{% endif %}
+    {% endif %}
+  {% endfor %}
+</svg>
+<details class="table-view"><summary>Table view</summary>
+<table><thead><tr><th>Week to</th><th class="num">Value</th><th class="num">Outages</th></tr></thead>
+<tbody>{% for r in rows %}<tr><td>{{ r[label_key] }}</td><td class="num">{{ r[value_key] if r[value_key] is not none else "—" }}{{ unit }}</td><td class="num">{{ r.count }}</td></tr>{% endfor %}</tbody></table>
+</details>
+{%- endmacro %}

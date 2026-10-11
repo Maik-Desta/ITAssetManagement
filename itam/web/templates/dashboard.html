@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+{% from "macros.html" import sev, branch_state, column_chart, line_chart, status_badge with context %}
+{% block title %}Executive dashboard{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div><h1>State of the estate</h1>
+    <p>{% if user.region %}{{ user.region.name }} region{% elif user.branch %}{{ user.branch.name }}{% else %}All {{ s.branches_total }} sites{% endif %} · live view</p></div>
+  <div class="actions"><a class="btn" href="/kpis">Programme KPIs</a><a class="btn" href="/noc">NOC console</a></div>
+</div>
+
+<div class="tiles">
+  <a class="tile hero" href="/branches">
+    <div class="label">Branches online</div>
+    <div class="value">{{ s.branches_online }} <small>/ {{ s.branches_monitored }}</small></div>
+    <div class="sub">monitored · {{ s.branches_total - s.branches_monitored }} not yet onboarded</div>
+  </a>
+  <a class="tile" href="/assets"><div class="label">Assets registered</div><div class="value">{{ "{:,}".format(s.assets_registered) }}</div><div class="sub">excluding disposed</div></a>
+  <div class="tile"><div class="label">Healthy assets</div><div class="value">{{ s.healthy_pct if s.healthy_pct is not none else "—" }}<small>%</small></div><div class="sub">of {{ s.installed_monitored }} installed &amp; monitored</div></div>
+  <a class="tile" href="/exceptions?type=ROGUE_DEVICE"><div class="label">Missing / rogue</div><div class="value">{{ s.missing }} <small>/ {{ s.rogue }}</small></div><div class="sub">target 0 unexplained removals</div></a>
+  <a class="tile" href="/noc"><div class="label">Open P1 / P2</div><div class="value">{{ s.open_p1 }} <small>/ {{ s.open_p2 }}</small></div><div class="sub">alerts not yet resolved</div></a>
+  <div class="tile"><div class="label">Unapproved changes</div><div class="value">{{ s.unapproved_changes }}</div><div class="sub">last 30 days</div></div>
+</div>
+
+<div class="grid grid-main">
+  <section class="card">
+    <h2>Live branch map</h2>
+    {%- set geo = s.branches | selectattr("latitude") | list -%}
+    {%- if geo -%}
+    {%- set lats = geo | map(attribute="latitude") | list -%}{%- set lons = geo | map(attribute="longitude") | list -%}
+    {%- set la0, la1, lo0, lo1 = lats | min, lats | max, lons | min, lons | max -%}
+    {%- set W, H, P = 640, 300, 16 -%}
+    {%- set sx = (W - 2 * P) / ((lo1 - lo0) or 1) -%}{%- set sy = (H - 2 * P) / ((la1 - la0) or 1) -%}
+    {%- set k = [sx, sy] | min -%}
+    <svg class="chart" viewBox="0 0 {{ W }} {{ H }}" role="img" aria-label="Map of branches coloured by status">
+      {% for st in ["not_monitored", "online", "degraded", "offline"] %}
+      {% for b in geo if s.branch_states.get(b.id) == st %}
+      <a href="/branches/{{ b.id }}">
+        <circle class="map-dot {{ st }}" tabindex="0" r="{{ 7 if st == 'offline' else 5 }}"
+          cx="{{ P + (b.longitude - lo0) * k }}" cy="{{ P + (la1 - b.latitude) * k }}"
+          data-tip="{{ b.code }} {{ b.name }} — {{ st.replace('_', ' ').title() }}"/>
+      </a>
+      {% endfor %}{% endfor %}
+    </svg>
+    {%- endif %}
+    {% set counts = s.branch_states.values() | list %}
+    <div class="legend">
+      <span><span class="dot good"></span>Online ({{ counts.count("online") }})</span>
+      <span><span class="dot warning"></span>Degraded ({{ counts.count("degraded") }})</span>
+      <span><span class="dot critical"></span>Offline ({{ counts.count("offline") }})</span>
+      <span><span class="dot"></span>Not monitored ({{ counts.count("not_monitored") }})</span>
+    </div>
+    <h3>Regional collectors</h3>
+    {% for c in s.collectors %}
+      <div class="actions small"><span class="badge"><span class="dot {{ 'good' if c.healthy else 'critical' }}"></span>{{ "Reporting" if c.healthy else "Silent" }}</span>{{ c.c.name }} <span class="muted">{{ c.c.last_heartbeat_at | ago }}</span></div>
+    {% else %}<p class="muted small">No collectors registered.</p>{% endfor %}
+  </section>
+  <section class="card">
+    <h2>Open alerts</h2>
+    {% if s.open_alerts %}
+    <table><tbody>
+      {% for a in s.open_alerts %}
+      <tr><td>{{ sev(a.severity) }}</td><td><a href="/alerts/{{ a.id }}">{{ a.title }}</a><div class="muted small">{{ a.detected_at | ago }} · {{ a.status.title() }}</div></td></tr>
+      {% endfor %}
+    </tbody></table>
+    {% else %}<p class="muted">No open alerts.</p>{% endif %}
+    <p><a href="/noc">All alerts →</a></p>
+  </section>
+</div>
+
+<div class="grid grid-3">
+  <section class="card"><h2>Mean time to detect (min)</h2><p class="muted small">Monitoring-detected outages, weekly</p>
+    {{ line_chart(s.trend, "week", "mttd", " min", 5, "Mean time to detect per week") }}</section>
+  <section class="card"><h2>Mean time to restore (min)</h2><p class="muted small">Failure to resolution, weekly</p>
+    {{ line_chart(s.trend, "week", "mttr", " min", None, "Mean time to restore per week") }}</section>
+  <section class="card"><h2>Asset age profile</h2><p class="muted small">Years since installation</p>
+    {{ column_chart(s.age_profile, "label", "count", " assets", "Assets by age") }}</section>
+</div>
+
+<div class="grid grid-2">
+  <section class="card">
+    <h2>Warranty / end of support due in 90 days <span class="muted small">({{ s.due_count }})</span></h2>
+    {% if s.due %}
+    <div class="table-wrap"><table>
+      <thead><tr><th>Asset</th><th>Branch</th><th>What</th><th>Date</th></tr></thead>
+      <tbody>{% for d in s.due %}<tr><td><a href="/assets/{{ d.asset.id }}" class="mono">{{ d.asset.asset_number }}</a></td>
+        <td>{{ d.asset.branch.code }}</td><td>{{ d.what }}</td><td class="nowrap">{{ d.date | d }}</td></tr>{% endfor %}</tbody>
+    </table></div>
+    {% else %}<p class="muted">Nothing due.</p>{% endif %}
+  </section>
+  <section class="card">
+    <h2>Audit score per branch</h2>
+    <p class="muted small">Data quality: completeness of mandatory fields (60%) + last physical audit accuracy (40%)</p>
+    <div class="grid grid-2">
+      <div><h3>Highest</h3><table><tbody>{% for r in s.league_top %}<tr><td><a href="/branches/{{ r.branch.id }}">{{ r.branch.code }} {{ r.branch.name }}</a></td><td class="num">{{ r.score }}</td></tr>{% endfor %}</tbody></table></div>
+      <div><h3>Lowest</h3><table><tbody>{% for r in s.league_bottom %}<tr><td><a href="/branches/{{ r.branch.id }}">{{ r.branch.code }} {{ r.branch.name }}</a></td><td class="num">{{ r.score }}</td></tr>{% endfor %}</tbody></table></div>
+    </div>
+    <p><a href="/data-quality">Full league table →</a></p>
+  </section>
+</div>
+{% endblock %}

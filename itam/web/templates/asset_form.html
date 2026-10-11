@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% from "macros.html" import csrf with context %}
+{% block title %}{{ "Edit " ~ asset.asset_number if asset else "Register asset" }}{% endblock %}
+{% block content %}
+{% set v = asset or {} %}
+<div class="page-head"><div>
+  <h1>{{ "Edit " ~ asset.asset_number if asset else "Register asset" }}</h1>
+  <p>{% if asset %}The asset number, branch and status change only through workflows.{% else %}Receive &amp; tag: an asset number is issued automatically (CC-RRR-BBBB-TTT-NNNNN) and never changes when the asset moves.{% endif %}</p>
+</div></div>
+<form method="post" class="card stack">
+  {{ csrf() }}
+  {% if prefill.get("exception_id") %}<input type="hidden" name="exception_id" value="{{ prefill.exception_id }}">
+    <div class="callout">Registering a device found by discovery (exception #{{ prefill.exception_id }}). The exception will be closed and linked.</div>{% endif %}
+  <div class="form-grid">
+    {% if not asset %}
+    <div class="field"><label for="branch_id">Branch</label><select id="branch_id" name="branch_id" required>
+      {% for b in branches %}<option value="{{ b.id }}" {{ "selected" if prefill.get("branch_id") == b.id|string }}>{{ b.code }} {{ b.name }}</option>{% endfor %}</select></div>
+    <div class="field"><label for="asset_type">Type (TTT)</label><select id="asset_type" name="asset_type" required>
+      {% for t in types %}<option value="{{ t.value }}" {{ "selected" if prefill.get("type") == t.value }}>{{ t.value }} · {{ TYPE_LABELS[t.value] }}</option>{% endfor %}</select></div>
+    <div class="field"><label for="initial_status">Initial status</label><select id="initial_status" name="initial_status">
+      <option value="IN_STOCK">In stock (received, tagged)</option><option value="ACTIVE">Installed – active (baseline onboarding)</option></select></div>
+    {% endif %}
+    <div class="field"><label for="serial_number">Serial number</label><input id="serial_number" name="serial_number" required value="{{ v.serial_number or prefill.get('serial', '') }}"></div>
+    <div class="field"><label for="model_id">Model</label><select id="model_id" name="model_id" {% if not asset %}data-filter-by="#asset_type"{% endif %}><option value="">—</option>
+      {% for m in models %}{% if not asset or m.asset_type == asset.asset_type %}<option value="{{ m.id }}" data-parent="{{ m.asset_type }}" {{ "selected" if v.model_id == m.id }}>{{ m.display }}{{ "" if m.is_standard else " (non-standard)" }}</option>{% endif %}{% endfor %}</select></div>
+    <div class="field"><label for="criticality">Criticality</label><select id="criticality" name="criticality"><option value="">Default for type</option>
+      {% for c in criticalities %}<option value="{{ c.value }}" {{ "selected" if v.criticality == c.value }}>{{ c.value.title() }}</option>{% endfor %}</select></div>
+    <div class="field"><label for="hostname">Hostname</label><input id="hostname" name="hostname" value="{{ v.hostname or prefill.get('hostname', '') }}"></div>
+    <div class="field"><label for="ip_address">Management IP</label><input id="ip_address" name="ip_address" value="{{ v.ip_address or prefill.get('ip', '') }}"></div>
+    <div class="field"><label for="mac_address">MAC address</label><input id="mac_address" name="mac_address" value="{{ v.mac_address or prefill.get('mac', '') }}"></div>
+    <div class="field"><label for="location_id">Location</label><select id="location_id" name="location_id" {% if not asset %}data-filter-by="#branch_id"{% endif %}><option value="">—</option>
+      {% for l in locations %}{% if not asset or l.branch_id == asset.branch_id %}<option value="{{ l.id }}" data-parent="{{ l.branch_id }}" {{ "selected" if v.location_id == l.id }}>{{ l.label }}</option>{% endif %}{% endfor %}</select></div>
+    <div class="field"><label for="rack_u">Rack U-position</label><input id="rack_u" name="rack_u" value="{{ v.rack_u or '' }}"></div>
+    <div class="field"><label for="contract_id">Contract / warranty</label><select id="contract_id" name="contract_id"><option value="">—</option>
+      {% for c in contracts %}<option value="{{ c.id }}" {{ "selected" if v.contract_id == c.id }}>{{ c.reference }} · {{ c.supplier }} (to {{ c.warranty_end | d }})</option>{% endfor %}</select></div>
+    <div class="field"><label for="warranty_end">Warranty end (override)</label><input id="warranty_end" type="date" name="warranty_end" value="{{ v.warranty_end or '' }}"></div>
+    <div class="field"><label for="purchase_cost">Purchase cost</label><input id="purchase_cost" type="number" step="0.01" name="purchase_cost" value="{{ v.purchase_cost if v.purchase_cost is not none else '' }}"></div>
+    <div class="field"><label for="finance_asset_ref">Finance fixed-asset no.</label><input id="finance_asset_ref" name="finance_asset_ref" value="{{ v.finance_asset_ref or '' }}"></div>
+    <div class="field full">
+      <label class="check"><input type="checkbox" name="pci_scope" value="1" {{ "checked" if v.pci_scope }}> In PCI DSS scope (req. 12.5.1 inventory)</label>
+      <label class="check"><input type="checkbox" name="holds_customer_data" value="1" {{ "checked" if v.holds_customer_data }}> May hold customer data (certified wipe before disposal)</label>
+      {% if not asset %}<label class="check"><input type="checkbox" name="tag_applied" value="1" checked> Tamper-evident QR tag applied</label>{% endif %}
+    </div>
+    <div class="field full"><label for="notes">Notes</label><textarea id="notes" name="notes">{{ v.notes or "" }}</textarea></div>
+  </div>
+  <div class="actions"><button class="btn primary" type="submit">{{ "Save changes" if asset else "Register & issue number" }}</button>
+    <a class="btn" href="{{ '/assets/' ~ asset.id if asset else '/assets' }}">Cancel</a></div>
+</form>
+{% endblock %}

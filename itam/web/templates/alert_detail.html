@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% from "macros.html" import sev, csrf, status_badge with context %}
+{% block title %}Alert {{ alert.ticket_ref or alert.id }}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div><h1>{{ sev(alert.severity) }} {{ alert.title }}</h1><p>{{ alert.ticket_ref or "No ticket" }} · {{ alert.category.replace("_", " ").title() }} · {{ alert.status.title() }}</p></div>
+  <div class="actions">
+    {% if alert.status == "OPEN" and can(user, "alert.respond") %}
+    <form method="post" action="/alerts/{{ alert.id }}/ack">{{ csrf() }}<input type="hidden" name="next" value="/alerts/{{ alert.id }}"><button class="btn primary" type="submit">Acknowledge</button></form>
+    {% endif %}
+  </div>
+</div>
+<div class="grid grid-2">
+  <section class="card">
+    <h2>Details</h2>
+    <dl class="kv">
+      <dt>Branch</dt><dd>{% if alert.branch %}<a href="/branches/{{ alert.branch.id }}">{{ alert.branch.code }} {{ alert.branch.name }}</a>{% else %}—{% endif %}</dd>
+      <dt>Asset</dt><dd>{% if alert.asset %}<a class="mono" href="/assets/{{ alert.asset.id }}">{{ alert.asset.asset_number }}</a> {{ status_badge(alert.asset.status) }}{% else %}—{% endif %}</dd>
+      <dt>Source</dt><dd>{{ alert.source.replace("_", " ").title() }}</dd>
+      <dt>Failure occurred</dt><dd>{{ alert.occurred_at | dt }} UTC</dd>
+      <dt>Detected</dt><dd>{{ alert.detected_at | dt }} UTC <span class="muted">(time to detect {{ ((alert.detected_at - alert.occurred_at).total_seconds() / 60) | duration }})</span></dd>
+      <dt>Response due</dt><dd>{{ alert.response_due_at | dt }} UTC</dd>
+      <dt>Acknowledged</dt><dd>{{ alert.acknowledged_at | dt }} {{ alert.acknowledged_by.full_name if alert.acknowledged_by else "" }}</dd>
+      <dt>Escalation level</dt><dd>{{ alert.escalation_level }} {{ ["(engineer)", "(regional lead)", "(Head of Infrastructure)", "(CIO)"][alert.escalation_level] }}</dd>
+      <dt>Resolved</dt><dd>{{ alert.resolved_at | dt }} {{ alert.resolved_by.full_name if alert.resolved_by else "" }}</dd>
+      <dt>Resolution</dt><dd>{{ alert.resolution or "—" }}</dd>
+      <dt>Detail</dt><dd>{{ alert.detail or "—" }}</dd>
+    </dl>
+    {% if alert.status != "RESOLVED" and can(user, "alert.respond") %}
+    <h3>Resolve</h3>
+    <form method="post" action="/alerts/{{ alert.id }}/resolve" class="stack">{{ csrf() }}
+      <textarea name="resolution" required placeholder="Root cause and fix"></textarea>
+      <button class="btn" type="submit">Resolve alert</button></form>
+    {% endif %}
+  </section>
+  <section class="card">
+    <h2>Recent monitoring events</h2>
+    <table><thead><tr><th>Occurred</th><th>Kind</th><th>Value</th><th>Message</th></tr></thead><tbody>
+    {% for e in events %}<tr><td class="nowrap">{{ e.occurred_at | dt }}</td><td>{{ e.kind }}</td><td>{{ e.value or "" }}</td><td>{{ e.message or "" }}</td></tr>
+    {% else %}<tr><td colspan="4" class="muted">No events.</td></tr>{% endfor %}
+    </tbody></table>
+  </section>
+</div>
+{% endblock %}

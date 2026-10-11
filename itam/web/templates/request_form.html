@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% from "macros.html" import csrf with context %}
+{% block title %}New equipment request{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>New equipment request</h1><p>Approved standard models only. Requires IT Manager and budget-owner approval.</p></div></div>
+<form method="post" class="card stack">{{ csrf() }}
+  <div class="form-grid">
+    <div class="field"><label for="branch_id">Destination branch</label><select id="branch_id" name="branch_id" required>
+      {% for b in branches %}<option value="{{ b.id }}" {{ "selected" if user.branch_id == b.id }}>{{ b.code }} {{ b.name }}</option>{% endfor %}</select></div>
+    <div class="field"><label for="asset_type">Type</label><select id="asset_type" name="asset_type" required>
+      {% for t in types %}<option value="{{ t.value }}">{{ t.value }} · {{ TYPE_LABELS[t.value] }}</option>{% endfor %}</select></div>
+    <div class="field"><label for="model_id">Standard model</label><select id="model_id" name="model_id" data-filter-by="#asset_type"><option value="">—</option>
+      {% for m in models %}<option value="{{ m.id }}" data-parent="{{ m.asset_type }}">{{ m.display }}</option>{% endfor %}</select></div>
+    <div class="field"><label for="quantity">Quantity</label><input id="quantity" name="quantity" type="number" min="1" max="500" value="1" required></div>
+    <div class="field"><label for="estimated_cost">Estimated total cost</label><input id="estimated_cost" name="estimated_cost" type="number" step="0.01"></div>
+    <div class="field full"><label for="justification">Business justification</label><textarea id="justification" name="justification" required></textarea></div>
+  </div>
+  <div class="actions"><button class="btn primary" type="submit">Submit for approval</button><a class="btn" href="/requests">Cancel</a></div>
+</form>
+{% endblock %}

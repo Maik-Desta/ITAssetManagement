@@ -1,0 +1,17 @@
+{% extends "login.html" %}
+{% block form %}
+{% for category, message in messages %}<div class="flash {{ category }}">{{ message }}</div>{% endfor %}
+{% if enrol_secret %}
+<div class="callout">
+  <strong>Set up multi-factor authentication.</strong> Add this key to your authenticator app (TOTP, 6 digits, 30 s):
+  <p class="mono">{{ enrol_secret }}</p>
+  <p class="small muted mono">{{ enrol_uri }}</p>
+</div>
+{% endif %}
+<form method="post" action="/login/mfa" class="stack">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <div><label for="code">Authentication code</label>
+    <input id="code" name="code" type="text" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9 ]{6,7}" required autofocus></div>
+  <button class="btn primary" type="submit">Verify</button>
+</form>
+{% endblock %}

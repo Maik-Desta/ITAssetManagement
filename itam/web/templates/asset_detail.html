@@ -1,0 +1,118 @@
+{% extends "base.html" %}
+{% from "macros.html" import status_badge, oper_badge, sev, csrf, simple_badge with context %}
+{% block title %}{{ asset.asset_number }}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div><h1 class="mono">{{ asset.asset_number }}</h1>
+    <p>{{ TYPE_LABELS[asset.asset_type] }}{% if asset.model %} · {{ asset.model.display }}{% endif %} · {{ status_badge(asset.status) }} {{ oper_badge(asset.oper_state, asset.monitored) }}
+      {% if asset.pci_scope %}{{ simple_badge("PCI DSS", "info") }}{% endif %}</p></div>
+  <div class="actions">
+    <a class="btn" href="/assets/{{ asset.id }}/label">Print tag</a>
+    {% if can(user, "asset.edit") and asset.status != "DISPOSED" %}<a class="btn" href="/assets/{{ asset.id }}/edit">Edit</a>{% endif %}
+    {% if can(user, "change.create") and allowed_changes and not open_change %}<a class="btn primary" href="/changes/new?asset_id={{ asset.id }}">Raise move / change</a>{% endif %}
+  </div>
+</div>
+{% if open_change %}<div class="callout">Open change <a href="/changes/{{ open_change.id }}">{{ open_change.reference }}</a> — {{ CHANGE_LABELS[open_change.change_type] }} ({{ open_change.status.replace("_", " ").lower() }}).</div><br>{% endif %}
+
+<div class="grid grid-main">
+<div class="stack">
+  <section class="card">
+    <h2>Configuration item</h2>
+    <div class="grid grid-2">
+    <dl class="kv">
+      <dt>Serial</dt><dd class="mono">{{ asset.serial_number }}</dd>
+      <dt>Branch</dt><dd><a href="/branches/{{ asset.branch.id }}">{{ asset.branch.code }} {{ asset.branch.name }}</a></dd>
+      <dt>Location</dt><dd>{{ asset.location.label if asset.location else "—" }}{% if asset.rack_u %} · {{ asset.rack_u }}{% endif %}</dd>
+      <dt>Hostname</dt><dd>{{ asset.hostname or "—" }}</dd>
+      <dt>IP / MAC</dt><dd class="mono">{{ asset.ip_address or "—" }} · {{ asset.mac_address or "—" }}</dd>
+      <dt>Criticality</dt><dd>{{ asset.criticality.title() }}</dd>
+      <dt>Custodian</dt><dd>{{ asset.custodian.full_name if asset.custodian else "—" }}{% if asset.custody_accepted_at %} <span class="muted small">accepted {{ asset.custody_accepted_at | dt("%Y-%m-%d") }}</span>{% endif %}</dd>
+    </dl>
+    <dl class="kv">
+      <dt>Received</dt><dd>{{ asset.received_date | d }}</dd>
+      <dt>Installed</dt><dd>{{ asset.install_date | d }}</dd>
+      <dt>Go-live verified</dt><dd>{{ asset.go_live_verified_at | dt }}</dd>
+      <dt>Warranty end</dt><dd>{{ asset.effective_warranty_end | d }}{% if asset.contract %} <span class="muted small">{{ asset.contract.reference }}</span>{% endif %}</dd>
+      <dt>EOL / EOS</dt><dd>{{ asset.eol_date | d }} / {{ asset.eos_date | d }}</dd>
+      <dt>Cost / FA no.</dt><dd>{{ "{:,.2f}".format(asset.purchase_cost) if asset.purchase_cost else "—" }} · {{ asset.finance_asset_ref or "—" }}</dd>
+      <dt>Tag</dt><dd>{{ ("applied " ~ (asset.tag_applied_at | dt("%Y-%m-%d"))) if asset.tag_applied_at else "not applied" }}</dd>
+      <dt>Last seen</dt><dd>{{ asset.last_seen_at | ago }}</dd>
+    </dl>
+    </div>
+    <p class="small {{ 'pass' if not completeness[2] else 'warn-text' }}">Data quality: {{ completeness[0] }}/{{ completeness[1] }} mandatory fields{% if completeness[2] %} — missing: {{ completeness[2] | join(", ") }}{% endif %}</p>
+  </section>
+
+  <section class="card">
+    <h2>Lifecycle actions</h2>
+    {% set did = namespace(any=False) %}
+    {% if asset.status == "IN_STOCK" and can(user, "asset.install") %}{% set did.any = True %}
+    <h3>Install &amp; configure</h3>
+    <form method="post" action="/assets/{{ asset.id }}/install" class="stack">{{ csrf() }}
+      <div class="form-grid">
+        <div class="field"><label for="i_loc">Location</label><select id="i_loc" name="location_id" required>{% for l in locations %}<option value="{{ l.id }}" {{ "selected" if asset.location_id == l.id }}>{{ l.label }}</option>{% endfor %}</select></div>
+        <div class="field"><label for="i_rack">Rack U</label><input id="i_rack" name="rack_u" value="{{ asset.rack_u or '' }}"></div>
+        <div class="field"><label for="i_ip">Management IP</label><input id="i_ip" name="ip_address" value="{{ asset.ip_address or '' }}"></div>
+        <div class="field"><label for="i_host">Hostname</label><input id="i_host" name="hostname" value="{{ asset.hostname or '' }}"></div>
+        <div class="field"><label for="i_mac">MAC</label><input id="i_mac" name="mac_address" value="{{ asset.mac_address or '' }}"></div>
+      </div>
+      <div>{% for key, label in install_checklist.items() %}<label class="check"><input type="checkbox" name="{{ key }}" value="1"> {{ label }}</label>{% endfor %}</div>
+      <button class="btn primary" type="submit">Record installation</button>
+    </form>
+    {% endif %}
+    {% if asset.status == "IN_STOCK" and asset.install_date and not asset.go_live_verified_at and (can(user, "asset.verify") or can(user, "asset.install")) %}{% set did.any = True %}
+    <form method="post" action="/assets/{{ asset.id }}/verify" class="actions">{{ csrf() }}
+      <span class="small secondary">Installed {{ asset.install_date | d }} — waiting for discovery to confirm the device.</span>
+      <button class="btn" type="submit">Verify go-live manually</button></form>
+    {% endif %}
+    {% if is_manager and not asset.custody_accepted_at and asset.status in ["ACTIVE", "FAULTY", "IN_STOCK"] %}{% set did.any = True %}
+    <form method="post" action="/assets/{{ asset.id }}/custody" class="actions">{{ csrf() }}
+      <span class="small secondary">As branch manager you are the accountable custodian.</span>
+      <button class="btn primary" type="submit">Accept custody (digital sign-off)</button></form>
+    {% endif %}
+    {% if not asset.tag_applied_at and (can(user, "asset.install") or can(user, "asset.register")) %}{% set did.any = True %}
+    <form method="post" action="/assets/{{ asset.id }}/tag" class="actions">{{ csrf() }}<button class="btn" type="submit">Record tag applied</button></form>
+    {% endif %}
+    {% if can(user, "change.create") and not open_change and allowed_changes %}{% set did.any = True %}
+    <div class="actions">{% for ct in allowed_changes %}<a class="btn small" href="/changes/new?asset_id={{ asset.id }}&type={{ ct.value }}">{{ CHANGE_LABELS[ct.value] }}</a>{% endfor %}</div>
+    {% endif %}
+    {% if not did.any %}<p class="muted small">No actions available to you for this asset in its current state.</p>{% endif %}
+  </section>
+
+  <section class="card">
+    <h2>Alerts</h2>
+    <table><tbody>{% for a in alerts %}<tr><td>{{ sev(a.severity) }}</td><td><a href="/alerts/{{ a.id }}">{{ a.title }}</a></td><td>{{ a.status.title() }}</td><td class="nowrap muted">{{ a.detected_at | dt }}</td></tr>
+    {% else %}<tr><td class="muted">No alerts.</td></tr>{% endfor %}</tbody></table>
+    {% if events %}<h3>Monitoring events</h3>
+    <table><tbody>{% for e in events %}<tr><td class="nowrap">{{ e.occurred_at | dt }}</td><td>{{ e.kind }}</td><td>{{ e.value or "" }}</td><td>{{ e.message or "" }}</td></tr>{% endfor %}</tbody></table>{% endif %}
+  </section>
+</div>
+
+<div class="stack">
+  <section class="card">
+    <h2>QR tag</h2>
+    <img src="/assets/{{ asset.id }}/qr.svg" alt="QR code for {{ asset.asset_number }}" width="148" height="148">
+    <p class="mono small">{{ asset.asset_number }}</p>
+  </section>
+  <section class="card">
+    <h2>Changes</h2>
+    <table><tbody>{% for c in changes %}<tr><td><a href="/changes/{{ c.id }}">{{ c.reference }}</a></td><td>{{ CHANGE_LABELS[c.change_type] }}</td><td>{{ c.status.replace("_", " ").title() }}</td></tr>
+    {% else %}<tr><td class="muted">None.</td></tr>{% endfor %}</tbody></table>
+  </section>
+  {% if exceptions %}
+  <section class="card"><h2>Exceptions</h2>
+    <table><tbody>{% for e in exceptions %}<tr><td><a href="/exceptions/{{ e.id }}" class="mono">{{ e.ticket_ref }}</a></td><td>{{ e.exception_type.replace("_", " ").title() }}</td><td>{{ e.status.title() }}</td></tr>{% endfor %}</tbody></table>
+  </section>
+  {% endif %}
+  <section class="card">
+    <h2>History</h2>
+    <ul class="timeline">
+      {% for h in asset.history[:40] %}
+      <li><time>{{ h.at | dt }}</time><strong>{{ h.event.replace("_", " ").title() }}</strong>
+        {% if h.to_status %}<span class="muted small">{{ STATUS_LABELS.get(h.from_status, "—") }} → {{ STATUS_LABELS.get(h.to_status) }}</span>{% endif %}
+        <div class="small secondary">{{ h.detail or "" }}{% if h.actor %} · {{ h.actor.full_name }}{% endif %}</div></li>
+      {% endfor %}
+    </ul>
+  </section>
+</div>
+</div>
+{% endblock %}

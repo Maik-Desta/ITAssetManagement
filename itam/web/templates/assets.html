@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% from "macros.html" import status_badge, oper_badge, pager %}
+{% block title %}Assets{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div><h1>Asset register</h1><p>{{ "{:,}".format(total) }} matching records · numbering standard CC-RRR-BBBB-TTT-NNNNN</p></div>
+  <div class="actions">
+    {% if can(user, "asset.export") %}<a class="btn" href="/assets/export.csv?{{ qs }}">Export CSV</a>{% endif %}
+    {% if can(user, "asset.register") %}<a class="btn primary" href="/assets/new">Register asset</a>{% endif %}
+  </div>
+</div>
+<form class="filters" method="get">
+  <div class="field"><label for="q">Search</label><input id="q" type="search" name="q" value="{{ params.get('q', '') }}"></div>
+  <div class="field"><label for="status">Status</label><select id="status" name="status"><option value="">All (excl. disposed)</option>
+    {% for k, v in STATUS_LABELS.items() %}<option value="{{ k }}" {{ "selected" if params.get("status") == k }}>{{ v }}</option>{% endfor %}</select></div>
+  <div class="field"><label for="type">Type</label><select id="type" name="type"><option value="">All</option>
+    {% for k, v in TYPE_LABELS.items() %}<option value="{{ k }}" {{ "selected" if params.get("type") == k }}>{{ k }} · {{ v }}</option>{% endfor %}</select></div>
+  <div class="field"><label for="region">Region</label><select id="region" name="region"><option value="">All</option>
+    {% for r in regions %}<option value="{{ r.code }}" {{ "selected" if params.get("region") == r.code }}>{{ r.code }}</option>{% endfor %}</select></div>
+  <div class="field"><label for="branch">Branch code</label><input id="branch" name="branch" value="{{ params.get('branch', '') }}" size="5"></div>
+  <div class="field"><label for="flag">Flag</label><select id="flag" name="flag"><option value="">—</option>
+    {% for k, v in [("untagged", "Not tagged"), ("no_custody", "Custody pending"), ("pending_golive", "Awaiting go-live"), ("pci", "PCI DSS in scope")] %}
+    <option value="{{ k }}" {{ "selected" if params.get("flag") == k }}>{{ v }}</option>{% endfor %}</select></div>
+  <button class="btn" type="submit">Filter</button> <a class="btn-link" href="/assets">Reset</a>
+</form>
+<section class="card"><div class="table-wrap"><table>
+  <thead><tr><th>Asset number</th><th>Type / model</th><th>Serial</th><th>Branch</th><th>Host / IP</th><th>Status</th><th>Monitoring</th><th>Warranty</th></tr></thead>
+  <tbody>
+  {% for a in assets %}
+  <tr><td><a class="mono" href="/assets/{{ a.id }}">{{ a.asset_number }}</a></td>
+    <td>{{ TYPE_LABELS[a.asset_type] }}<div class="muted small">{{ a.model.display if a.model else "" }}</div></td>
+    <td class="mono small">{{ a.serial_number }}</td>
+    <td><a href="/branches/{{ a.branch.id }}">{{ a.branch.code }}</a> <span class="muted small">{{ a.branch.name }}</span></td>
+    <td>{{ a.hostname or "" }}<div class="muted small mono">{{ a.ip_address or "" }}</div></td>
+    <td>{{ status_badge(a.status) }}</td><td>{{ oper_badge(a.oper_state, a.monitored) }}</td>
+    <td class="nowrap small">{{ a.effective_warranty_end | d }}</td></tr>
+  {% else %}<tr><td colspan="8" class="muted">No assets match.</td></tr>{% endfor %}
+  </tbody></table></div>
+  {{ pager(page, page_size, total, qs) }}
+</section>
+{% endblock %}

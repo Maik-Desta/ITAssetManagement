@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block title %}Data quality{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>Data-quality league table</h1><p>Monthly score per branch: completeness of mandatory fields (60%) and last physical-audit accuracy (40%) · {{ audits_due }} audits scheduled</p></div></div>
+<section class="card"><div class="table-wrap"><table>
+  <thead><tr><th class="num">Rank</th><th>Branch</th><th class="num">Assets</th><th>Completeness</th><th class="num">Audit accuracy</th><th>Last audit</th><th class="num">Score</th></tr></thead>
+  <tbody>{% for r in rows %}
+  <tr><td class="num">{{ loop.index }}</td><td><a href="/branches/{{ r.branch.id }}">{{ r.branch.code }} {{ r.branch.name }}</a></td><td class="num">{{ r.assets }}</td>
+    <td><progress max="100" value="{{ r.completeness or 0 }}" aria-label="Completeness"></progress> <span class="small">{{ r.completeness }}%</span></td>
+    <td class="num">{{ (r.accuracy ~ "%") if r.accuracy is not none else "—" }}</td><td class="nowrap">{{ r.last_audit.completed_at | dt("%Y-%m-%d") if r.last_audit else "never" }}</td>
+    <td class="num"><strong>{{ r.score }}</strong></td></tr>
+  {% endfor %}</tbody></table></div></section>
+{% endblock %}

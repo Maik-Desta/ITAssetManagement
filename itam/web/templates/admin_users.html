@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% from "macros.html" import csrf with context %}
+{% block title %}Users & roles{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>Users &amp; roles</h1><p>Role-based access aligned to the RACI. Regional roles are scoped to a region; branch managers to their branch.</p></div>
+  <form method="get" class="actions"><input type="search" name="q" value="{{ q }}" placeholder="Search users" aria-label="Search"><button class="btn" type="submit">Search</button></form></div>
+<div class="grid grid-main">
+<section class="card"><div class="table-wrap"><table>
+  <thead><tr><th>User</th><th>Roles</th><th>Scope</th><th>MFA</th><th>Status</th><th></th></tr></thead>
+  <tbody>{% for u in rows %}
+  <tr><td><strong>{{ u.username }}</strong><div class="small muted">{{ u.full_name }}</div></td>
+    <td class="small">{% for r in u.roles %}{{ ROLE_LABELS.get(r, r) }}{% if not loop.last %}, {% endif %}{% endfor %}</td>
+    <td class="small">{{ u.region.code if u.region else "" }}{{ (" · " ~ u.branch.code) if u.branch else "" }}{{ "All" if not u.region and not u.branch else "" }}</td>
+    <td>{{ "✓" if u.mfa_secret else "—" }}</td><td>{{ "Active" if u.is_active else "Inactive" }}</td>
+    <td><details><summary class="small">Manage</summary>
+      <form method="post" action="/admin/users/{{ u.id }}" class="stack small">{{ csrf() }}
+        <input name="full_name" value="{{ u.full_name }}" aria-label="Full name"><input name="email" value="{{ u.email or '' }}" placeholder="E-mail" aria-label="E-mail"><input name="phone" value="{{ u.phone or '' }}" placeholder="Phone" aria-label="Phone">
+        <div>{% for r in roles %}<label class="check"><input type="checkbox" name="roles" value="{{ r.value }}" {{ "checked" if r.value in u.roles }}> {{ ROLE_LABELS[r.value] }}</label>{% endfor %}</div>
+        <select name="region_id" aria-label="Region"><option value="">All regions</option>{% for rg in regions %}<option value="{{ rg.id }}" {{ "selected" if u.region_id == rg.id }}>{{ rg.code }}</option>{% endfor %}</select>
+        <select name="branch_id" aria-label="Branch"><option value="">No branch</option>{% for b in branches %}<option value="{{ b.id }}" {{ "selected" if u.branch_id == b.id }}>{{ b.code }} {{ b.name }}</option>{% endfor %}</select>
+        <button class="btn small" type="submit">Save</button></form>
+      <div class="actions">{% for a, l in [("reset_password", "Reset password"), ("reset_mfa", "Reset MFA"), ("deactivate" if u.is_active else "activate", "Deactivate" if u.is_active else "Activate")] %}
+        <form method="post" action="/admin/users/{{ u.id }}/action" data-confirm="{{ l }} for {{ u.username }}?">{{ csrf() }}<input type="hidden" name="action" value="{{ a }}"><button class="btn small" type="submit">{{ l }}</button></form>{% endfor %}</div>
+    </details></td></tr>
+  {% endfor %}</tbody></table></div></section>
+<section class="card">
+  <h2>Create user</h2>
+  <form method="post" action="/admin/users" class="stack">{{ csrf() }}
+    <input name="username" placeholder="Username" required aria-label="Username"><input name="full_name" placeholder="Full name" required aria-label="Full name">
+    <input name="email" type="email" placeholder="E-mail" aria-label="E-mail"><input name="phone" placeholder="Mobile (SMS alerts)" aria-label="Phone">
+    <div>{% for r in roles %}<label class="check"><input type="checkbox" name="roles" value="{{ r.value }}"> {{ ROLE_LABELS[r.value] }}</label>{% endfor %}</div>
+    <select name="region_id" aria-label="Region"><option value="">All regions</option>{% for rg in regions %}<option value="{{ rg.id }}">{{ rg.code }} {{ rg.name }}</option>{% endfor %}</select>
+    <select name="branch_id" aria-label="Branch"><option value="">No branch</option>{% for b in branches %}<option value="{{ b.id }}">{{ b.code }} {{ b.name }}</option>{% endfor %}</select>
+    <button class="btn primary" type="submit">Create</button></form>
+</section>
+</div>
+{% endblock %}

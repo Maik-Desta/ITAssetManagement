@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% from "macros.html" import csrf with context %}
+{% block title %}Rollout & gates{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>Rollout &amp; decision gates</h1><p>12-month programme · 4 field teams × 2 branches/week ≈ 8 branches per week · {{ live_last_week }} branch(es) went live in the last 7 days</p></div></div>
+<div class="tiles">{% for w in waves %}
+  <div class="tile"><div class="label">{{ w.label }}</div><div class="value">{{ w.live }} <small>/ {{ w.total }} live</small></div>
+    <progress max="{{ w.total or 1 }}" value="{{ w.live }}" aria-label="{{ w.label }} progress"></progress><div class="sub">{{ w.in_progress }} in progress</div></div>
+{% endfor %}</div>
+<div class="grid grid-2">
+<section class="card">
+  <h2>Branches in flight</h2>
+  <div class="table-wrap"><table><thead><tr><th>Branch</th><th>Wave</th><th>Stage</th><th>Planned go-live</th></tr></thead><tbody>
+  {% for b in in_flight %}<tr><td><a href="/branches/{{ b.id }}#rollout">{{ b.code }} {{ b.name }}</a></td><td>{{ b.wave }}</td><td>{{ b.rollout_stage.replace("_", " ").title() }}</td><td>{{ b.planned_go_live | d }}</td></tr>
+  {% else %}<tr><td colspan="4" class="muted">No branches in progress.</td></tr>{% endfor %}</tbody></table></div>
+</section>
+<section class="card">
+  <h2>Decision gates &amp; budget</h2>
+  <div class="table-wrap"><table><thead><tr><th>Gate</th><th>Phase</th><th>Planned</th><th>Actual</th><th class="num">Budget (plan / actual)</th></tr></thead><tbody>
+  {% for m in milestones %}
+  <tr><td><strong>{{ m.code }}</strong> {{ m.name }}</td><td class="small secondary">{{ m.phase }}</td><td class="nowrap">{{ m.planned_date | d }}</td>
+    <td class="nowrap">{% if m.actual_date %}<span class="{{ 'pass' if m.actual_date <= m.planned_date else 'fail' }}">{{ m.actual_date | d }}</span>{% else %}—{% endif %}</td>
+    <td class="num">{{ "{:,.0f}".format(m.budget_planned) if m.budget_planned else "—" }} / {{ "{:,.0f}".format(m.budget_actual) if m.budget_actual else "—" }}</td></tr>
+  {% if can(user, "programme.manage") and not m.actual_date %}
+  <tr><td colspan="5"><form method="post" action="/rollout/milestones/{{ m.id }}" class="actions small">{{ csrf() }}
+    <input type="date" name="actual_date" aria-label="Actual date"><input type="number" name="budget_actual" placeholder="Actual spend" aria-label="Actual spend">
+    <button class="btn small" type="submit">Record {{ m.code }}</button></form></td></tr>
+  {% endif %}
+  {% endfor %}</tbody></table></div>
+</section>
+</div>
+{% endblock %}

@@ -1,0 +1,7 @@
+{% extends "base.html" if user else "login.html" %}
+{% block title %}Error{% endblock %}
+{% block content %}
+<div class="card"><h1>{{ "Not found" if status_code == 404 else "Not permitted" if status_code == 403 else "Something went wrong" }}</h1>
+<p class="secondary">{{ message }}</p><a class="btn" href="/dashboard">Back to dashboard</a></div>
+{% endblock %}
+{% block form %}<p class="secondary">{{ message }}</p><a class="btn" href="/login">Sign in</a>{% endblock %}

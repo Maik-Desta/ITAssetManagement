@@ -1,0 +1,107 @@
+{% extends "base.html" %}
+{% from "macros.html" import branch_state, status_badge, oper_badge, sev, csrf, simple_badge with context %}
+{% block title %}{{ branch.code }} {{ branch.name }}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div><h1>{{ branch.code }} · {{ branch.name }}</h1>
+    <p>{{ branch.region.name }} · {{ branch.city or "" }} · {{ branch_state(state) }} · Manager: {{ branch.manager.full_name if branch.manager else "unassigned" }}</p></div>
+  <div class="actions">
+    <a class="btn" href="/assets?branch={{ branch.code }}">Assets</a>
+    <a class="btn" href="/labels?branch={{ branch.code }}">Print QR tags</a>
+    {% if can(user, "request.create") %}<a class="btn" href="/requests/new">Request equipment</a>{% endif %}
+  </div>
+</div>
+
+<div class="tiles">
+  <div class="tile"><div class="label">Assets</div><div class="value">{{ dq.assets }}</div></div>
+  <div class="tile"><div class="label">Data completeness</div><div class="value">{{ dq.completeness if dq.completeness is not none else "—" }}<small>%</small></div></div>
+  <div class="tile"><div class="label">Last audit accuracy</div><div class="value">{{ dq.accuracy if dq.accuracy is not none else "—" }}<small>%</small></div><div class="sub">{{ dq.last_audit.completed_at | dt("%Y-%m-%d") if dq.last_audit else "never audited" }}</div></div>
+  <div class="tile"><div class="label">Audit score</div><div class="value">{{ dq.score if dq.score is not none else "—" }}</div></div>
+  <div class="tile"><div class="label">Open alerts / exceptions</div><div class="value">{{ alerts | length }} <small>/ {{ exceptions | length }}</small></div></div>
+</div>
+
+<div class="grid grid-main">
+<div class="stack">
+<section class="card">
+  <h2>Assets at this branch</h2>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Asset number</th><th>Type</th><th>Host / IP</th><th>Location</th><th>Status</th><th>Monitoring</th><th>Custody</th></tr></thead>
+    <tbody>{% for a in assets if a.status != "DISPOSED" %}
+    <tr><td><a class="mono" href="/assets/{{ a.id }}">{{ a.asset_number }}</a></td><td>{{ TYPE_LABELS[a.asset_type] }}</td>
+      <td>{{ a.hostname or "" }}<div class="muted small mono">{{ a.ip_address or "" }}</div></td>
+      <td class="small">{{ a.location.label if a.location else "—" }}{% if a.rack_u %} · {{ a.rack_u }}{% endif %}</td>
+      <td>{{ status_badge(a.status) }}</td><td>{{ oper_badge(a.oper_state, a.monitored) }}</td>
+      <td>{% if a.custody_accepted_at %}<span class="pass">✓</span>{% else %}<span class="muted">pending</span>{% endif %}</td></tr>
+    {% else %}<tr><td colspan="7" class="muted">No assets registered yet.</td></tr>{% endfor %}</tbody>
+  </table></div>
+</section>
+
+{% if alerts %}
+<section class="card"><h2>Open alerts</h2><table><tbody>
+  {% for a in alerts %}<tr><td>{{ sev(a.severity) }}</td><td><a href="/alerts/{{ a.id }}">{{ a.title }}</a></td><td class="nowrap muted">{{ a.detected_at | ago }}</td></tr>{% endfor %}
+</tbody></table></section>
+{% endif %}
+{% if exceptions %}
+<section class="card"><h2>Open exceptions</h2><table><tbody>
+  {% for e in exceptions %}<tr><td class="mono"><a href="/exceptions/{{ e.id }}">{{ e.ticket_ref }}</a></td><td>{{ e.summary }}</td></tr>{% endfor %}
+</tbody></table></section>
+{% endif %}
+</div>
+
+<div class="stack">
+<section class="card" id="rollout">
+  <h2>Rollout — branch-day playbook</h2>
+  <div class="steps">{% for st in enums.ROLLOUT_ORDER %}{% set idx = enums.ROLLOUT_ORDER.index(stage) %}
+    <span class="{{ 'current' if st == stage else 'done' if loop.index0 < idx }}">{{ st.value.replace("_", " ").title() }}</span>{% endfor %}</div>
+  <p class="small muted">Wave {{ branch.wave or "—" }} · planned go-live {{ branch.planned_go_live | d }}{% if branch.went_live_at %} · live since {{ branch.went_live_at | dt("%Y-%m-%d") }}{% endif %}</p>
+  {% if checklist %}
+    {% for item in checklist %}
+    <form method="post" action="/branches/{{ branch.id }}/rollout/check">{{ csrf() }}
+      <input type="hidden" name="item" value="{{ item }}">
+      <input type="hidden" name="done" value="{{ '0' if branch.rollout_checklist.get(item) else '1' }}">
+      <label class="check"><input type="checkbox" {{ "checked" if branch.rollout_checklist.get(item) }} {{ "disabled" if not can(user, "rollout.manage") }} data-autosubmit> {{ item }}</label>
+    </form>
+    {% endfor %}
+  {% endif %}
+  {% if stage.value != "LIVE" and can(user, "rollout.manage") %}
+  <form method="post" action="/branches/{{ branch.id }}/rollout/advance">{{ csrf() }}<button class="btn primary" type="submit">Advance to next stage</button></form>
+  {% endif %}
+</section>
+
+<section class="card">
+  <h2>Custody &amp; attestation</h2>
+  <p class="small secondary">{{ pending_custody | length }} asset(s) awaiting custody acceptance by the branch manager.</p>
+  {% if is_manager %}
+    {% if pending_custody %}
+    <form method="post" action="/branches/{{ branch.id }}/custody-all" data-confirm="Accept custody of {{ pending_custody | length }} assets?">{{ csrf() }}
+      <button class="btn" type="submit">Accept custody of all listed assets</button></form><br>
+    {% endif %}
+    <form method="post" action="/branches/{{ branch.id }}/attest" class="stack">{{ csrf() }}
+      <label for="statement">Attestation statement</label>
+      <textarea id="statement" name="statement" required>I confirm that the IT assets recorded for {{ branch.code }} {{ branch.name }} are present and in my custody.</textarea>
+      {% set last = audits | selectattr("status", "equalto", "COMPLETED") | first %}
+      {% if last %}<input type="hidden" name="audit_id" value="{{ last.id }}">{% endif %}
+      <button class="btn primary" type="submit">Attest custody</button>
+    </form>
+  {% endif %}
+  <h3>History</h3>
+  <ul class="timeline">{% for a in attestations[:5] %}<li><time>{{ a.attested_at | dt }}</time>{{ a.user.full_name }} attested {{ a.asset_count }} assets</li>{% else %}<li class="muted">No attestations yet.</li>{% endfor %}</ul>
+</section>
+
+<section class="card">
+  <h2>Physical audits</h2>
+  <table><tbody>{% for a in audits[:6] %}
+    <tr><td><a href="/audits/{{ a.id }}">#{{ a.id }}</a></td><td>{{ a.scheduled_for | d }}</td><td>{{ a.status.title() }}</td><td class="num">{{ (a.accuracy ~ "%") if a.accuracy is not none else "" }}</td></tr>
+  {% else %}<tr><td class="muted">None.</td></tr>{% endfor %}</tbody></table>
+  {% if can(user, "audit.schedule") or "INTERNAL_AUDIT" in user.roles %}
+  <form method="post" action="/branches/{{ branch.id }}/audits" class="actions">{{ csrf() }}
+    <input type="date" name="scheduled_for" required aria-label="Date">
+    <select name="method" aria-label="Method"><option value="MOBILE_SCAN">Mobile scan</option><option value="FULL_VERIFICATION">Full verification</option></select>
+    <button class="btn" type="submit">Schedule</button></form>
+  {% endif %}
+</section>
+
+<section class="card"><h2>Locations</h2><ul>{% for l in branch.locations %}<li>{{ l.label }}</li>{% endfor %}</ul></section>
+</div>
+</div>
+{% endblock %}

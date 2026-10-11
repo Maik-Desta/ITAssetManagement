@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}KPIs{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>Programme KPIs</h1><p>Cadence: weekly PMO status, monthly Programme Board, quarterly Steering Committee · computed live from the platform</p></div></div>
+<section class="card"><div class="table-wrap"><table>
+  <thead><tr><th>KPI</th><th>Definition</th><th>Current</th><th>Target</th><th>Status</th><th>Reported to</th></tr></thead>
+  <tbody>{% for k in kpis %}
+  <tr><td><strong>{{ k.name }}</strong></td><td class="secondary">{{ k.definition }}</td><td class="nowrap"><strong>{{ k.display }}</strong></td><td class="nowrap">{{ k.target }}</td>
+    <td class="nowrap">{% if k.met is none %}<span class="badge"><span class="dot"></span>No data</span>{% elif k.met %}<span class="badge"><span class="dot good"></span>On target</span>{% else %}<span class="badge"><span class="dot critical"></span>Off target</span>{% endif %}</td>
+    <td>{{ k.reported_to }}</td></tr>
+  {% endfor %}</tbody></table></div></section>
+{% endblock %}

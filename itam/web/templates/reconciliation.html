@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}Finance reconciliation{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>Finance fixed-asset reconciliation</h1><p>Annual: IT register reconciled to the fixed-asset register (slide 22)</p></div>
+  <a class="btn" href="/reconciliation/it-register.csv">Download IT register (reconciliation format)</a></div>
+<div class="grid grid-main">
+<section class="card">
+  <h2>History</h2>
+  <div class="table-wrap"><table>
+    <thead><tr><th>#</th><th>Run</th><th>File</th><th class="num">Finance records</th><th class="num">Matched</th><th class="num">Mismatched</th><th class="num">Finance only</th><th class="num">IT only</th></tr></thead>
+    <tbody>{% for r in runs %}<tr><td>{{ r.id }}</td><td class="nowrap">{{ r.run_at | dt }} · {{ r.run_by.full_name }}</td><td>{{ r.source_name }}</td>
+      <td class="num">{{ r.finance_records }}</td><td class="num">{{ r.matched }}</td><td class="num">{{ r.mismatched }}</td><td class="num">{{ r.finance_only }}</td><td class="num">{{ r.it_only }}</td></tr>
+    {% else %}<tr><td colspan="8" class="muted">No reconciliations yet.</td></tr>{% endfor %}</tbody></table></div>
+  <p><a href="/exceptions?source=FINANCE_RECON">Open reconciliation exceptions →</a></p>
+</section>
+<section class="card">
+  <h2>Upload fixed-asset register</h2>
+  <p class="small secondary">CSV with columns <code>finance_asset_ref</code> (required), <code>asset_number</code>, <code>serial_number</code>, <code>description</code>, <code>cost</code>, <code>branch_code</code>, <code>status</code> (ACTIVE / WRITTEN_OFF). Records are matched on FA number, then asset number, then serial.</p>
+  <form method="post" action="/reconciliation" enctype="multipart/form-data" class="stack">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="file" name="file" accept=".csv,text/csv" required aria-label="CSV file">
+    <button class="btn primary" type="submit">Reconcile</button></form>
+</section>
+</div>
+{% endblock %}

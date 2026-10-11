@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block title %}Controls testing{% endblock %}
+{% block content %}
+{% set failed = tests | rejectattr("passed") | list %}
+<div class="page-head"><div><h1>Controls testing</h1><p>Independent review of controls, approvals and audit trail (3rd line of defence) · {{ tests | length - failed | length }} of {{ tests | length }} passing</p></div></div>
+<section class="card"><div class="table-wrap"><table>
+  <thead><tr><th>Control</th><th>Test</th><th>Result</th><th class="num">Exceptions</th><th>Examples</th></tr></thead>
+  <tbody>{% for t in tests %}
+  <tr><td><strong>{{ t.name }}</strong></td><td class="secondary">{{ t.description }}</td>
+    <td>{% if t.passed %}<span class="pass">✓ Pass</span>{% else %}<span class="fail">✗ Fail</span>{% endif %}</td>
+    <td class="num">{{ t.count }}</td><td class="small mono">{{ t.failures[:6] | join(", ") }}{% if t.count > 6 %} …{% endif %}</td></tr>
+  {% endfor %}</tbody></table></div></section>
+{% endblock %}

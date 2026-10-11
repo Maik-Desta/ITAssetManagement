@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% from "macros.html" import csrf with context %}
+{% block title %}Reference data{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>Reference data</h1><p>Regions (RRR), branches (BBBB), locations, vendors, standard models with EOL/EOS dates, and contracts.</p></div></div>
+<div class="grid grid-2">
+<section class="card"><h2>Regions</h2>
+  <table><tbody>{% for r in regions %}<tr><td class="mono">{{ r.country_code }}-{{ r.code }}</td><td>{{ r.name }}</td><td class="num">{{ r.branches | length }} branches</td></tr>{% endfor %}</tbody></table>
+  <form method="post" action="/admin/reference/region" class="actions">{{ csrf() }}<input name="code" placeholder="RRR" maxlength="3" required aria-label="Code"><input name="country_code" value="{{ settings.country_code }}" maxlength="2" aria-label="Country"><input name="name" placeholder="Name" required aria-label="Name"><button class="btn small" type="submit">Add region</button></form>
+</section>
+<section class="card"><h2>Add branch</h2>
+  <form method="post" action="/admin/reference/branch" class="form-grid">{{ csrf() }}
+    <input name="code" placeholder="BBBB" maxlength="4" required aria-label="Code"><input name="name" placeholder="Name" required aria-label="Name">
+    <select name="region_id" aria-label="Region">{% for r in regions %}<option value="{{ r.id }}">{{ r.code }}</option>{% endfor %}</select>
+    <input name="city" placeholder="City" aria-label="City"><input name="latitude" placeholder="Latitude" aria-label="Latitude"><input name="longitude" placeholder="Longitude" aria-label="Longitude">
+    <select name="wave" aria-label="Wave"><option value="">Wave…</option>{% for w in ["PILOT", "WAVE1", "WAVE2", "WAVE3"] %}<option>{{ w }}</option>{% endfor %}</select>
+    <input type="date" name="planned_go_live" aria-label="Planned go-live"><button class="btn small" type="submit">Add branch</button></form>
+  <h3>Add location</h3>
+  <form method="post" action="/admin/reference/location" class="form-grid">{{ csrf() }}
+    <select name="branch_id" aria-label="Branch">{% for b in branches %}<option value="{{ b.id }}">{{ b.code }} {{ b.name }}</option>{% endfor %}</select>
+    <input name="building" placeholder="Building" aria-label="Building"><input name="floor" placeholder="Floor" aria-label="Floor"><input name="room" placeholder="Room" aria-label="Room"><input name="rack" placeholder="Rack" aria-label="Rack">
+    <button class="btn small" type="submit">Add location</button></form>
+</section>
+<section class="card" id="models"><h2>Models</h2>
+  <div class="table-wrap"><table><thead><tr><th>Type</th><th>Model</th><th>Standard</th><th>EOL / EOS</th></tr></thead><tbody>
+  {% for m in models %}<tr><td>{{ m.asset_type }}</td><td>{{ m.display }}</td>
+    <td colspan="2"><form method="post" action="/admin/reference/model/{{ m.id }}" class="actions small">{{ csrf() }}
+      <label class="check"><input type="checkbox" name="is_standard" value="1" {{ "checked" if m.is_standard }}> std</label>
+      <input type="date" name="eol_date" value="{{ m.eol_date or '' }}" aria-label="EOL"><input type="date" name="eos_date" value="{{ m.eos_date or '' }}" aria-label="EOS">
+      <button class="btn small" type="submit">Save</button></form></td></tr>{% endfor %}</tbody></table></div>
+  <h3>Add model</h3>
+  <form method="post" action="/admin/reference/model" class="form-grid">{{ csrf() }}
+    <select name="vendor_id" aria-label="Vendor">{% for v in vendors %}<option value="{{ v.id }}">{{ v.name }}</option>{% endfor %}</select>
+    <input name="name" placeholder="Model" required aria-label="Model"><select name="asset_type" aria-label="Type">{% for t in types %}<option>{{ t.value }}</option>{% endfor %}</select>
+    <label class="check"><input type="checkbox" name="is_standard" value="1" checked> Standard</label>
+    <input type="date" name="eol_date" aria-label="EOL"><input type="date" name="eos_date" aria-label="EOS"><button class="btn small" type="submit">Add model</button></form>
+  <h3>Add vendor</h3>
+  <form method="post" action="/admin/reference/vendor" class="actions">{{ csrf() }}<input name="name" placeholder="Vendor" required aria-label="Vendor"><input name="support_portal" placeholder="Support portal URL" aria-label="Portal"><button class="btn small" type="submit">Add vendor</button></form>
+</section>
+<section class="card"><h2>Contracts &amp; warranties</h2>
+  <table><thead><tr><th>Reference</th><th>Supplier</th><th>PO</th><th>Warranty end</th></tr></thead><tbody>
+  {% for c in contracts %}<tr><td>{{ c.reference }}</td><td>{{ c.supplier }}</td><td>{{ c.po_number or "" }}</td><td>{{ c.warranty_end | d }}</td></tr>{% endfor %}</tbody></table>
+  <h3>Add contract</h3>
+  <form method="post" action="/admin/reference/contract" class="form-grid">{{ csrf() }}
+    <input name="reference" placeholder="Reference" required aria-label="Reference"><input name="supplier" placeholder="Supplier" required aria-label="Supplier"><input name="po_number" placeholder="PO" aria-label="PO">
+    <select name="contract_type" aria-label="Type"><option>WARRANTY</option><option>SUPPORT</option><option>LEASE</option></select><input name="cost" placeholder="Cost" aria-label="Cost">
+    <label>Start<input type="date" name="start_date"></label><label>Warranty end<input type="date" name="warranty_end"></label><label>Support end<input type="date" name="support_end"></label>
+    <button class="btn small" type="submit">Add contract</button></form>
+</section>
+</div>
+{% endblock %}

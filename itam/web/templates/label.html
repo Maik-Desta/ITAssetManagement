@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}QR tags{% endblock %}
+{% block content %}
+<div class="page-head no-print"><div><h1>QR asset tags</h1><p>{{ assets | length }} label(s). Print on tamper-evident label stock.</p></div>
+  <div class="actions"><button class="btn primary" type="button" data-print>Print</button></div></div>
+<div class="label-sheet">
+  {% for a in assets %}
+  <div class="tag-label">
+    <img src="/assets/{{ a.id }}/qr.svg" alt="QR {{ a.asset_number }}">
+    <div><div class="num">{{ a.asset_number }}</div>
+      <div class="meta">{{ settings.bank_name }} · IT asset</div>
+      <div class="meta">S/N {{ a.serial_number }}</div>
+      <div class="meta">Do not remove. Report damage to IT.</div></div>
+  </div>
+  {% else %}<p class="muted">No labels to print.</p>{% endfor %}
+</div>
+{% endblock %}

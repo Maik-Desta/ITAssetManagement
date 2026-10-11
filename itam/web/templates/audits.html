@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% from "macros.html" import csrf with context %}
+{% block title %}Physical audits{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>Physical audits</h1><p>Quarterly cyclical audit of 25% of branches with the mobile scan · all branches covered each year</p></div></div>
+<div class="tiles">
+  <div class="tile"><div class="label">Branches audited this year</div><div class="value">{{ covered }} <small>/ {{ total }}</small></div>
+    <progress max="{{ total or 1 }}" value="{{ covered }}" aria-label="Coverage"></progress></div>
+</div>
+<div class="grid grid-main">
+<section class="card">
+  <div class="tabs"><a href="/audits" class="{{ 'active' if not status }}">All</a>{% for s in ["SCHEDULED", "IN_PROGRESS", "COMPLETED"] %}<a href="/audits?status={{ s }}" class="{{ 'active' if status == s }}">{{ s.replace("_", " ").title() }}</a>{% endfor %}</div>
+  <div class="table-wrap"><table>
+    <thead><tr><th>#</th><th>Branch</th><th>Method</th><th>Date</th><th>Status</th><th>Auditor</th><th class="num">Found / expected</th><th class="num">Accuracy</th></tr></thead>
+    <tbody>{% for a in rows %}
+      <tr><td><a href="/audits/{{ a.id }}">#{{ a.id }}</a></td><td>{{ a.branch.code }} {{ a.branch.name }}</td><td>{{ a.method.replace("_", " ").title() }}</td>
+        <td class="nowrap">{{ a.scheduled_for | d }}</td><td>{{ a.status.replace("_", " ").title() }}</td><td>{{ a.auditor.full_name if a.auditor else "—" }}</td>
+        <td class="num">{{ (a.found_count ~ " / " ~ a.expected_count) if a.status == "COMPLETED" else "" }}</td>
+        <td class="num {{ 'fail' if a.accuracy is not none and a.accuracy < 98 }}">{{ (a.accuracy ~ "%") if a.accuracy is not none else "" }}</td></tr>
+    {% else %}<tr><td colspan="8" class="muted">No audits.</td></tr>{% endfor %}</tbody></table></div>
+</section>
+<div class="stack">
+{% if can(user, "audit.schedule") %}
+<section class="card">
+  <h2>Schedule the quarterly cycle</h2>
+  <p class="small secondary">Selects the 25% of branches audited least recently and spreads them across the quarter.</p>
+  <form method="post" action="/audits/schedule-quarter" class="stack">{{ csrf() }}
+    <div><label for="start">Quarter start</label><input id="start" type="date" name="start" value="{{ today }}"></div>
+    <button class="btn primary" type="submit">Schedule 25% of branches</button></form>
+</section>
+{% endif %}
+{% if can(user, "audit.schedule") or "INTERNAL_AUDIT" in user.roles %}
+<section class="card">
+  <h2>Schedule a single audit</h2>
+  <form method="post" action="/audits/schedule" class="stack">{{ csrf() }}
+    <select name="branch_id" aria-label="Branch">{% for b in branches %}<option value="{{ b.id }}">{{ b.code }} {{ b.name }}</option>{% endfor %}</select>
+    <input type="date" name="scheduled_for" required aria-label="Date">
+    <select name="method" aria-label="Method"><option value="MOBILE_SCAN">Mobile scan (cyclical)</option><option value="FULL_VERIFICATION">Full verification (annual)</option></select>
+    <button class="btn" type="submit">Schedule</button></form>
+</section>
+{% endif %}
+</div>
+</div>
+{% endblock %}

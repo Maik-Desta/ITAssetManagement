@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}Exceptions{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>Exception register</h1><p>Discovery reconciliation, physical audits, Finance reconciliation and HR feed · target ≥ 95% closed within 30 days</p></div></div>
+<div class="tiles">{% for k, v in ageing.items() %}<div class="tile"><div class="label">Open, age {{ k }}</div><div class="value">{{ v }}</div></div>{% endfor %}</div>
+<form class="filters" method="get">
+  <div class="field"><label for="status">Status</label><select id="status" name="status"><option value="OPEN" {{ "selected" if status == "OPEN" }}>Open</option><option value="RESOLVED" {{ "selected" if status == "RESOLVED" }}>Resolved</option><option value="" {{ "selected" if not status }}>All</option></select></div>
+  <div class="field"><label for="type">Type</label><select id="type" name="type"><option value="">All</option>{% for t in types %}<option value="{{ t.value }}" {{ "selected" if type == t.value }}>{{ t.value.replace("_", " ").title() }}</option>{% endfor %}</select></div>
+  <div class="field"><label for="source">Source</label><select id="source" name="source"><option value="">All</option>{% for s in ["DISCOVERY", "PHYSICAL_AUDIT", "FINANCE_RECON", "HR_FEED"] %}<option value="{{ s }}" {{ "selected" if source == s }}>{{ s.replace("_", " ").title() }}</option>{% endfor %}</select></div>
+  <button class="btn" type="submit">Filter</button>
+</form>
+<section class="card"><div class="table-wrap"><table>
+  <thead><tr><th>Ref</th><th>Type</th><th>Summary</th><th>Branch</th><th>Source</th><th>Age</th><th>Status</th></tr></thead>
+  <tbody>{% for e in rows %}{% set age = (now - e.created_at).days %}
+  <tr><td class="mono"><a href="/exceptions/{{ e.id }}">{{ e.ticket_ref }}</a></td><td>{{ e.exception_type.replace("_", " ").title() }}</td><td>{{ e.summary }}</td>
+    <td>{{ e.branch.code if e.branch else "—" }}</td><td>{{ e.source.replace("_", " ").title() }}</td>
+    <td class="nowrap {{ 'fail' if age > 30 and e.status == 'OPEN' }}">{{ age }} d</td><td>{{ e.status.title() }}</td></tr>
+  {% else %}<tr><td colspan="7" class="muted">No exceptions.</td></tr>{% endfor %}</tbody></table></div></section>
+{% endblock %}

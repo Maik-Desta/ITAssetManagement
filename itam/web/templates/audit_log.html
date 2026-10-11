@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}Audit trail{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>Audit trail</h1><p>Append-only and hash-chained: every entry's SHA-256 covers the previous one, and database triggers block updates and deletes.</p></div>
+  <a class="btn" href="/audit-log?verify=1">Verify chain integrity</a></div>
+{% if verification %}
+  {% if verification[0] %}<div class="flash success">✓ Chain intact — {{ verification[1] }} entries verified.</div>
+  {% else %}<div class="flash error">✗ Chain broken at entry {{ verification[2] }} (checked {{ verification[1] }}).</div>{% endif %}
+{% endif %}
+<form class="filters" method="get">
+  <div class="field"><label for="actor">Actor</label><input id="actor" name="actor" value="{{ actor }}"></div>
+  <div class="field"><label for="action">Action prefix</label><input id="action" name="action" value="{{ action }}" placeholder="change."></div>
+  <div class="field"><label for="entity">Entity id</label><input id="entity" name="entity" value="{{ entity }}" placeholder="KE-NRB-…"></div>
+  <button class="btn" type="submit">Filter</button>
+</form>
+<section class="card"><div class="table-wrap"><table>
+  <thead><tr><th>#</th><th>Time (UTC)</th><th>Actor</th><th>Action</th><th>Entity</th><th>Details</th><th>Hash</th></tr></thead>
+  <tbody>{% for e in rows %}
+  <tr><td>{{ e.id }}</td><td class="nowrap">{{ e.at | dt("%Y-%m-%d %H:%M:%S") }}</td><td>{{ e.actor }}</td><td class="mono small">{{ e.action }}</td>
+    <td class="mono small">{{ e.entity_type }} {{ e.entity_id or "" }}</td>
+    <td class="small">{% for k, v in e.details.items() %}<span class="muted">{{ k }}</span>={{ v }}{% if not loop.last %}; {% endif %}{% endfor %}</td>
+    <td class="mono small muted" title="{{ e.hash }}">{{ e.hash[:10] }}…</td></tr>
+  {% endfor %}</tbody></table></div>
+  <div class="actions small">{% if page > 1 %}<a class="btn small" href="?actor={{ actor }}&action={{ action }}&entity={{ entity }}&page={{ page - 1 }}">← Newer</a>{% endif %}
+    {% if rows | length == size %}<a class="btn small" href="?actor={{ actor }}&action={{ action }}&entity={{ entity }}&page={{ page + 1 }}">Older →</a>{% endif %}</div>
+</section>
+{% endblock %}

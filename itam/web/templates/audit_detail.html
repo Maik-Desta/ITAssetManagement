@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% from "macros.html" import csrf, status_badge with context %}
+{% block title %}Audit #{{ audit.id }}{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>Physical audit #{{ audit.id }} · {{ audit.branch.code }} {{ audit.branch.name }}</h1>
+  <p>{{ audit.method.replace("_", " ").title() }} · {{ audit.status.replace("_", " ").title() }} · scheduled {{ audit.scheduled_for | d }}{% if audit.auditor %} · auditor {{ audit.auditor.full_name }}{% endif %}</p></div>
+  {% if audit.status == "SCHEDULED" and can(user, "audit.conduct") %}
+  <form method="post" action="/audits/{{ audit.id }}/start">{{ csrf() }}<button class="btn primary" type="submit">Start audit</button></form>{% endif %}
+</div>
+{% if audit.status == "COMPLETED" %}
+<div class="tiles">
+  <div class="tile"><div class="label">Accuracy</div><div class="value">{{ audit.accuracy }}<small>%</small></div><div class="sub">target ≥ 98%</div></div>
+  <div class="tile"><div class="label">Found</div><div class="value">{{ audit.found_count }} <small>/ {{ audit.expected_count }}</small></div></div>
+  <div class="tile"><div class="label">Missing</div><div class="value">{{ audit.missing_count }}</div></div>
+  <div class="tile"><div class="label">Unexpected</div><div class="value">{{ audit.unexpected_count }}</div></div>
+  <div class="tile"><div class="label">Wrong location</div><div class="value">{{ audit.wrong_location_count }}</div></div>
+</div>
+{% endif %}
+<div class="grid grid-main">
+<section class="card">
+  <h2>Items {% if audit.status == "IN_PROGRESS" %}<span class="muted small">{{ scanned }} of {{ audit.items | length }} scanned</span>{% endif %}</h2>
+  {% if audit.status == "IN_PROGRESS" %}<progress max="{{ audit.items | length or 1 }}" value="{{ scanned }}" aria-label="Progress"></progress>{% endif %}
+  <div class="table-wrap"><table>
+    <thead><tr><th>Asset / tag</th><th>Type</th><th>Registered location</th><th>Result</th><th>Note</th></tr></thead>
+    <tbody>{% for i in items %}
+      <tr><td class="mono">{% if i.asset %}<a href="/assets/{{ i.asset.id }}">{{ i.asset.asset_number }}</a>{% else %}{{ i.scanned_value }}{% endif %}</td>
+        <td>{{ TYPE_LABELS[i.asset.asset_type] if i.asset else "?" }}</td><td class="small">{{ i.asset.location.label if i.asset and i.asset.location else "—" }}</td>
+        <td>{% if i.result == "FOUND" %}<span class="pass">✓ Found</span>{% elif i.result %}<span class="fail">✗ {{ i.result.replace("_", " ").title() }}</span>{% else %}<span class="muted">not scanned</span>{% endif %}</td>
+        <td class="small">{{ i.note or "" }}</td></tr>
+    {% else %}<tr><td colspan="5" class="muted">Start the audit to load the expected asset list.</td></tr>{% endfor %}</tbody></table></div>
+</section>
+{% if audit.status == "IN_PROGRESS" %}
+<div class="stack">
+<section class="card" id="scan">
+  <h2>Scan tag</h2>
+  <p class="small secondary">Use a handheld scanner, type the asset number, or use the phone camera.</p>
+  <form method="post" action="/audits/{{ audit.id }}/scan" class="stack">{{ csrf() }}
+    <input id="scanned" name="scanned" class="scan-input" required autocomplete="off" placeholder="KE-NRB-0012-RTR-00041" data-autofocus aria-label="Scanned tag">
+    <button class="btn small" type="button" data-camera-scan="#scanned" data-video-box="#camera" data-auto-submit="1">Use camera</button>
+    <div id="camera" class="scanner"></div>
+    <select name="location_id" aria-label="Found at location"><option value="">Found at registered location</option>{% for l in locations %}<option value="{{ l.id }}">Found at: {{ l.label }}</option>{% endfor %}</select>
+    <input name="note" placeholder="Note (optional)" aria-label="Note">
+    <button class="btn primary" type="submit">Record scan</button></form>
+</section>
+<section class="card">
+  <h2>Complete</h2>
+  <p class="small secondary">Unscanned assets are recorded as missing and exceptions are raised for every discrepancy.</p>
+  <form method="post" action="/audits/{{ audit.id }}/complete" class="stack" data-confirm="Complete the audit? Unscanned items will be marked missing.">{{ csrf() }}
+    <textarea name="notes" placeholder="Auditor notes"></textarea><button class="btn primary" type="submit">Complete audit</button></form>
+</section>
+</div>
+{% elif audit.notes %}<section class="card"><h2>Notes</h2><p>{{ audit.notes }}</p></section>{% endif %}
+</div>
+{% endblock %}

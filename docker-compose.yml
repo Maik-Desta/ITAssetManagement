@@ -1,0 +1,29 @@
+# Local / pilot deployment: application + PostgreSQL.
+# Production (slide 15/32): 2 app nodes behind a load balancer (scheduler enabled on ONE node only),
+# 2-node encrypted PostgreSQL cluster replicated to the DR site, TLS terminated at the load balancer.
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: itam
+      POSTGRES_USER: itam
+      POSTGRES_PASSWORD: ${ITAM_DB_PASSWORD:?set ITAM_DB_PASSWORD}
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U itam"]
+      interval: 5s
+      retries: 10
+  app:
+    build: .
+    depends_on:
+      db: {condition: service_healthy}
+    environment:
+      ITAM_DATABASE_URL: postgresql+psycopg://itam:${ITAM_DB_PASSWORD}@db:5432/itam
+      ITAM_SECRET_KEY: ${ITAM_SECRET_KEY:?set ITAM_SECRET_KEY}
+      ITAM_COUNTRY_CODE: ${ITAM_COUNTRY_CODE:-KE}
+      ITAM_BANK_NAME: ${ITAM_BANK_NAME:-The Bank}
+      ITAM_MFA_REQUIRED_ROLES: ${ITAM_MFA_REQUIRED_ROLES:-ADMIN,CIO,CFO,CISO,IT_ASSET_MANAGER}
+      ITAM_SECURE_COOKIES: ${ITAM_SECURE_COOKIES:-false}
+    ports: ["8000:8000"]
+volumes:
+  pgdata:

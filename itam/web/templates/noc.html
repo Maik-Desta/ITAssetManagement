@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% from "macros.html" import sev, csrf with context %}
+{% block title %}NOC console{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div><h1>NOC console</h1><p>24/7 monitoring · auto-refreshes every {{ refresh }} s · unacknowledged alerts escalate engineer → regional lead → Head of Infrastructure → CIO</p></div>
+</div>
+<div class="tiles">
+  {% for s in ["P1", "P2", "P3", "P4"] %}
+  <a class="tile" href="/noc?sev={{ s }}"><div class="label">{{ sev(s) }} {{ SEVERITY_LABELS[s] }}</div><div class="value">{{ counts.get(s, 0) }}</div>
+    <div class="sub">{{ {"P1": "SMS + call · 15-min response", "P2": "SMS + e-mail · 30-min response", "P3": "Ticket · 4-hour response", "P4": "Report · next business day"}[s] }}</div></a>
+  {% endfor %}
+</div>
+{% if offline %}
+<div class="callout danger"><strong>Branches offline:</strong>
+  {% for b in offline %}<a href="/branches/{{ b.id }}">{{ b.code }} {{ b.name }}</a>{% if not loop.last %}, {% endif %}{% endfor %}</div>
+<br>
+{% endif %}
+<div class="grid grid-main">
+<section class="card">
+  <div class="tabs">
+    <a href="/noc?show=active&sev=P1,P2,P3" class="{{ 'active' if show == 'active' and sev == 'P1,P2,P3' }}">Active P1–P3</a>
+    <a href="/noc?show=active&sev=P1,P2,P3,P4" class="{{ 'active' if show == 'active' and sev == 'P1,P2,P3,P4' }}">All active</a>
+    <a href="/noc?show=resolved&sev=P1,P2,P3,P4" class="{{ 'active' if show == 'resolved' }}">Resolved</a>
+  </div>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Sev</th><th>Alert</th><th>Branch</th><th>Detected</th><th>Response due</th><th>Esc.</th><th></th></tr></thead>
+    <tbody>
+    {% for a in alerts %}
+      {% set overdue = a.status == "OPEN" and now > a.response_due_at %}
+      <tr>
+        <td>{{ sev(a.severity) }}</td>
+        <td><a href="/alerts/{{ a.id }}">{{ a.title }}</a><div class="muted small">{{ a.ticket_ref or "" }} · {{ a.category.replace("_", " ").title() }} · {{ a.source.replace("_", " ").title() }}</div></td>
+        <td>{% if a.branch %}<a href="/branches/{{ a.branch.id }}">{{ a.branch.code }}</a>{% else %}—{% endif %}</td>
+        <td class="nowrap">{{ a.detected_at | ago }}</td>
+        <td class="nowrap">{% if a.status == "RESOLVED" %}<span class="muted">resolved {{ a.resolved_at | ago }}</span>{% elif a.status == "ACKNOWLEDGED" %}<span class="pass">✓ acknowledged</span>{% elif overdue %}<span class="fail">⚠ overdue</span>{% else %}{{ a.response_due_at | dt("%H:%M") }}{% endif %}</td>
+        <td>{{ "L" ~ a.escalation_level if a.escalation_level else "—" }}</td>
+        <td>{% if a.status == "OPEN" and can(user, "alert.respond") %}
+          <form method="post" action="/alerts/{{ a.id }}/ack" class="inline">{{ csrf() }}<input type="hidden" name="next" value="/noc?show={{ show }}&sev={{ sev }}"><button class="btn small" type="submit">Acknowledge</button></form>
+        {% endif %}</td>
+      </tr>
+    {% else %}
+      <tr><td colspan="7" class="muted">No alerts.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+</section>
+<section class="card">
+  <h2>Log a user-reported incident</h2>
+  <p class="secondary small">Outages reported by staff or customers count against the proactive-detection KPI unless monitoring already raised them.</p>
+  {% if can(user, "incident.report") %}
+  <form method="post" action="/noc/incident" class="stack">
+    {{ csrf() }}
+    <div><label for="branch_id">Branch</label><select id="branch_id" name="branch_id" required>
+      {% for b in branches %}<option value="{{ b.id }}">{{ b.code }} {{ b.name }}</option>{% endfor %}</select></div>
+    <div><label for="asset_number">Asset number (optional)</label><input id="asset_number" name="asset_number" type="text" placeholder="KE-NRB-0012-RTR-00041"></div>
+    <div><label for="severity">Severity</label><select id="severity" name="severity">{% for s in ["P1","P2","P3","P4"] %}<option {{ "selected" if s == "P2" }}>{{ s }}</option>{% endfor %}</select></div>
+    <div><label for="description">Description</label><textarea id="description" name="description" required></textarea></div>
+    <button class="btn primary" type="submit">Log incident</button>
+  </form>
+  {% else %}<p class="muted small">Only NOC analysts can log incidents.</p>{% endif %}
+</section>
+</div>
+{% endblock %}

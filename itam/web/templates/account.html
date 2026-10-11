@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% from "macros.html" import csrf with context %}
+{% block title %}Account{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>My account</h1><p>{{ user.full_name }} · {{ user.username }}</p></div></div>
+<div class="grid grid-2">
+  <section class="card">
+    <h2>Profile</h2>
+    <dl class="kv">
+      <dt>Roles</dt><dd>{% for r in user.roles %}{{ ROLE_LABELS.get(r, r) }}{% if not loop.last %}, {% endif %}{% endfor %}</dd>
+      <dt>Region scope</dt><dd>{{ user.region.name if user.region else "All regions" }}</dd>
+      <dt>Branch</dt><dd>{{ (user.branch.code ~ " " ~ user.branch.name) if user.branch else "—" }}</dd>
+      <dt>E-mail</dt><dd>{{ user.email or "—" }}</dd>
+      <dt>Phone (SMS alerts)</dt><dd>{{ user.phone or "—" }}</dd>
+      <dt>MFA</dt><dd>{{ "Enabled" if user.mfa_secret else "Not enabled" }}</dd>
+    </dl>
+  </section>
+  <section class="card">
+    <h2>Change password</h2>
+    <form method="post" action="/account/password" class="stack">
+      {{ csrf() }}
+      <div><label for="current">Current password</label><input id="current" name="current" type="password" autocomplete="current-password" required></div>
+      <div><label for="new">New password</label><input id="new" name="new" type="password" autocomplete="new-password" minlength="12" required></div>
+      <div><label for="confirm">Confirm new password</label><input id="confirm" name="confirm" type="password" autocomplete="new-password" required></div>
+      <button class="btn primary" type="submit">Change password</button>
+    </form>
+  </section>
+  {% if enrol_secret %}
+  <section class="card">
+    <h2>Enable multi-factor authentication</h2>
+    <p class="secondary small">Add this key to an authenticator app, then enter the 6-digit code.</p>
+    <p class="mono">{{ enrol_secret }}</p>
+    <form method="post" action="/account/mfa" class="actions">
+      {{ csrf() }}
+      <input name="code" type="text" inputmode="numeric" placeholder="123456" required aria-label="Code">
+      <button class="btn primary" type="submit">Enable</button>
+    </form>
+  </section>
+  {% endif %}
+</div>
+{% endblock %}

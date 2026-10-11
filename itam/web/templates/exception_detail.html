@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% from "macros.html" import csrf with context %}
+{% block title %}{{ exc.ticket_ref }}{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>{{ exc.ticket_ref }} · {{ exc.exception_type.replace("_", " ").title() }}</h1><p>{{ exc.summary }}</p></div></div>
+<div class="grid grid-2">
+<section class="card">
+  <dl class="kv">
+    <dt>Status</dt><dd>{{ exc.status.title() }}</dd>
+    <dt>Source</dt><dd>{{ exc.source.replace("_", " ").title() }}</dd>
+    <dt>Raised</dt><dd>{{ exc.created_at | dt }} ({{ (now - exc.created_at).days }} days ago)</dd>
+    <dt>Branch</dt><dd>{% if exc.branch %}<a href="/branches/{{ exc.branch.id }}">{{ exc.branch.code }} {{ exc.branch.name }}</a>{% else %}—{% endif %}</dd>
+    <dt>Asset</dt><dd>{% if exc.asset %}<a class="mono" href="/assets/{{ exc.asset.id }}">{{ exc.asset.asset_number }}</a>{% else %}—{% endif %}</dd>
+    {% for k, v in exc.observed.items() if v not in (none, "") %}<dt>{{ k.replace("_", " ") }}</dt><dd class="mono small">{{ v }}</dd>{% endfor %}
+    {% if exc.resolved_at %}<dt>Resolved</dt><dd>{{ exc.resolved_at | dt }} {{ exc.resolved_by.full_name if exc.resolved_by else "(automatic)" }}</dd><dt>Resolution</dt><dd>{{ exc.resolution }}</dd>{% endif %}
+  </dl>
+</section>
+{% if exc.status == "OPEN" and can(user, "exception.resolve") %}
+<section class="card stack">
+  <h2>Resolve</h2>
+  {% if exc.exception_type == "ROGUE_DEVICE" and can(user, "asset.register") %}
+  <a class="btn" href="/assets/new?exception_id={{ exc.id }}&branch_id={{ exc.branch_id }}&ip={{ exc.observed.get('ip') or '' }}&mac={{ exc.observed.get('mac') or '' }}&serial={{ exc.observed.get('serial') or '' }}&hostname={{ exc.observed.get('hostname') or '' }}">Register this device as an asset</a>
+  {% endif %}
+  <form method="post" action="/exceptions/{{ exc.id }}/resolve" class="stack">{{ csrf() }}
+    <textarea name="resolution" required placeholder="Investigation outcome and action taken"></textarea>
+    {% if exc.exception_type == "ROGUE_DEVICE" %}<label class="check"><input type="checkbox" name="allowlist" value="1"> Known non-asset device — allow-list (CISO / IT Asset Manager)</label>{% endif %}
+    <button class="btn primary" type="submit">Resolve exception</button></form>
+</section>
+{% endif %}
+</div>
+{% endblock %}

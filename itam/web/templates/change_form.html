@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% from "macros.html" import csrf, status_badge with context %}
+{% block title %}Raise change{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>Raise change for <span class="mono">{{ asset.asset_number }}</span></h1>
+  <p>{{ TYPE_LABELS[asset.asset_type] }} at {{ asset.branch.code }} {{ asset.branch.name }} · {{ status_badge(asset.status) }}</p></div></div>
+<div class="grid grid-main">
+<form method="post" action="/changes/new" class="card stack">{{ csrf() }}
+  <input type="hidden" name="asset_id" value="{{ asset.id }}">
+  <div class="form-grid">
+    <div class="field"><label for="change_type">Action</label><select id="change_type" name="change_type" required>
+      {% for ct in allowed %}<option value="{{ ct.value }}" {{ "selected" if change_type == ct }}>{{ CHANGE_LABELS[ct.value] }}</option>{% endfor %}</select></div>
+    <div class="field"><label for="scheduled_for">Scheduled for</label><input id="scheduled_for" name="scheduled_for" type="datetime-local"></div>
+    <div class="field"><label for="ticket_ref">Change ticket ref.</label><input id="ticket_ref" name="ticket_ref"></div>
+    <div class="field" data-show-when="#change_type=TRANSFER_BRANCH"><label for="to_branch_id">Destination branch</label><select id="to_branch_id" name="to_branch_id"><option value="">—</option>
+      {% for b in branches if b.id != asset.branch_id %}<option value="{{ b.id }}">{{ b.code }} {{ b.name }}</option>{% endfor %}</select></div>
+    <div class="field" data-show-when="#change_type=MOVE_WITHIN_BRANCH,TRANSFER_BRANCH"><label for="to_location_id">Destination location</label>
+      <select id="to_location_id" name="to_location_id" data-filter-by="#to_branch_id"><option value="">—</option>
+      {% for l in locations %}{% if l.branch_id == asset.branch_id %}<option value="{{ l.id }}" data-group="same">{{ l.branch.code }} · {{ l.label }}</option>{% else %}<option value="{{ l.id }}" data-parent="{{ l.branch_id }}">{{ l.branch.code }} · {{ l.label }}</option>{% endif %}{% endfor %}</select></div>
+    <div class="field full"><label for="reason">Reason</label><textarea id="reason" name="reason" required></textarea></div>
+  </div>
+  <div class="actions"><button class="btn primary" type="submit">Submit for approval</button><a class="btn" href="/assets/{{ asset.id }}">Cancel</a></div>
+</form>
+<section class="card">
+  <h2>Approval matrix</h2>
+  <table><thead><tr><th>Action</th><th>Approver 1</th><th>Approver 2</th></tr></thead><tbody>
+  {% for ct in allowed %}<tr><td>{{ CHANGE_LABELS[ct.value] }}</td><td>{{ ROLE_LABELS[matrix[ct.value][0]] }}</td><td>{{ ROLE_LABELS[matrix[ct.value][1]] if matrix[ct.value] | length > 1 else "—" }}</td></tr>{% endfor %}
+  </tbody></table>
+  <p class="small muted">The requester cannot approve; the two approvals must come from different people. Unapproved removal triggers a 'Missing' alert to NOC, Security and the branch manager.</p>
+</section>
+</div>
+{% endblock %}

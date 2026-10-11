@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% from "macros.html" import branch_state %}
+{% block title %}Branches{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>Branches</h1><p>{{ branches | length }} sites</p></div></div>
+<form class="filters" method="get">
+  <div class="field"><label for="q">Search</label><input id="q" type="search" name="q" value="{{ q }}" placeholder="Code, name, city"></div>
+  <div class="field"><label for="region">Region</label><select id="region" name="region" data-autosubmit><option value="">All</option>
+    {% for r in regions %}<option value="{{ r.code }}" {{ "selected" if region == r.code }}>{{ r.code }} · {{ r.name }}</option>{% endfor %}</select></div>
+  <button class="btn" type="submit">Filter</button>
+</form>
+<section class="card"><div class="table-wrap"><table>
+  <thead><tr><th>Code</th><th>Branch</th><th>Region</th><th>Status</th><th class="num">Assets</th><th>Wave</th><th>Rollout stage</th><th>Manager</th></tr></thead>
+  <tbody>
+  {% for b in branches %}
+  <tr><td class="mono">{{ b.code }}</td><td><a href="/branches/{{ b.id }}">{{ b.name }}</a>{% if b.is_head_office %} <span class="badge">HQ</span>{% endif %}</td>
+    <td>{{ b.region.code }}</td><td>{{ branch_state(states.get(b.id)) }}</td><td class="num">{{ counts.get(b.id, 0) }}</td>
+    <td>{{ b.wave or "—" }}</td><td>{{ b.rollout_stage.replace("_", " ").title() }}</td><td>{{ b.manager.full_name if b.manager else "—" }}</td></tr>
+  {% endfor %}
+  </tbody></table></div></section>
+{% endblock %}

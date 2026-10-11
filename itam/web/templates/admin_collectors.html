@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% from "macros.html" import csrf with context %}
+{% block title %}Collectors{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>Regional collectors</h1><p>Each collector polls ~25–50 branches (SNMPv3, ICMP, syslog, WMI/SSH) and posts to <code>/api/v1/collector/*</code> with its API key.</p></div></div>
+{% if new_key %}<div class="flash warning"><div><strong>API key for {{ new_key[0] }} — shown once.</strong> Store it in the privileged-access vault.<br><code>{{ new_key[1] }}</code></div></div>{% endif %}
+<div class="grid grid-main">
+<section class="card"><table>
+  <thead><tr><th>Name</th><th>Region</th><th>Key prefix</th><th>Last heartbeat</th><th>Status</th><th></th></tr></thead>
+  <tbody>{% for c in rows %}<tr><td>{{ c.name }}</td><td>{{ c.region.code if c.region else "All" }}</td><td class="mono">{{ c.api_key_prefix }}…</td>
+    <td>{{ c.last_heartbeat_at | ago }}</td><td>{{ "Enabled" if c.is_active else "Disabled" }}</td>
+    <td class="actions"><form method="post" action="/admin/collectors/{{ c.id }}/rotate" data-confirm="Rotate key? The old key stops working immediately.">{{ csrf() }}<button class="btn small" type="submit">Rotate key</button></form>
+      <form method="post" action="/admin/collectors/{{ c.id }}/toggle">{{ csrf() }}<button class="btn small" type="submit">{{ "Disable" if c.is_active else "Enable" }}</button></form></td></tr>
+  {% else %}<tr><td colspan="6" class="muted">No collectors.</td></tr>{% endfor %}</tbody></table></section>
+<section class="card"><h2>Register collector</h2>
+  <form method="post" action="/admin/collectors" class="stack">{{ csrf() }}
+    <input name="name" placeholder="collector-msa-2" required aria-label="Name">
+    <select name="region_id" aria-label="Region"><option value="">All regions</option>{% for r in regions %}<option value="{{ r.id }}">{{ r.code }} {{ r.name }}</option>{% endfor %}</select>
+    <button class="btn primary" type="submit">Create &amp; issue key</button></form></section>
+</div>
+{% endblock %}

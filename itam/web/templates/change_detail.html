@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% from "macros.html" import csrf, status_badge with context %}
+{% block title %}{{ change.reference }}{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>{{ change.reference }} · {{ label }}</h1>
+  <p><a class="mono" href="/assets/{{ change.asset.id }}">{{ change.asset.asset_number }}</a> {{ status_badge(change.asset.status) }} · {{ change.status.replace("_", " ").title() }}</p></div>
+  {% if change.status in ["PENDING_APPROVAL", "APPROVED"] and (user.id == change.requester_id or can(user, "change.close")) %}
+  <form method="post" action="/changes/{{ change.id }}/cancel" class="actions" data-confirm="Cancel this change?">{{ csrf() }}<input name="reason" placeholder="Reason" required aria-label="Reason"><button class="btn danger" type="submit">Cancel change</button></form>
+  {% endif %}
+</div>
+<div class="steps">{% set order = ["PENDING_APPROVAL", "APPROVED", "IN_PROGRESS", "COMPLETED"] %}
+  {% for st in order %}<span class="{{ 'current' if st == change.status else 'done' if change.status in order and loop.index0 < order.index(change.status) }}">{{ ["Request raised", "Approved (maker-checker)", "In progress", "Completed"][loop.index0] }}</span>{% endfor %}
+  {% if change.status in ["REJECTED", "CANCELLED"] %}<span class="current">{{ change.status.title() }}</span>{% endif %}</div>
+<div class="grid grid-2">
+<section class="card">
+  <dl class="kv">
+    <dt>Requested by</dt><dd>{{ change.requester.full_name }} · {{ change.created_at | dt }}</dd>
+    <dt>Reason</dt><dd>{{ change.reason }}</dd>
+    <dt>From</dt><dd>{{ change.from_branch.code }} {{ change.from_branch.name }}{% if change.from_location %} · {{ change.from_location.label }}{% endif %}</dd>
+    {% if change.to_branch or change.to_location %}<dt>To</dt><dd>{% if change.to_branch %}{{ change.to_branch.code }} {{ change.to_branch.name }}{% endif %}{% if change.to_location %} · {{ change.to_location.label }}{% endif %}</dd>{% endif %}
+    <dt>Scheduled</dt><dd>{{ change.scheduled_for | dt }}</dd>
+    <dt>Ticket</dt><dd>{{ change.ticket_ref or "—" }}</dd>
+    <dt>Evidence</dt><dd>{{ change.evidence_ref or "—" }}</dd>
+    {% if change.change_type == "DISPOSE" %}
+    <dt>Wipe certificate</dt><dd>{{ change.wipe_certificate_ref or "—" }}</dd>
+    <dt>Disposal certificate</dt><dd>{{ change.disposal_certificate_ref or "—" }}</dd>
+    <dt>Finance register</dt><dd>{{ ("updated " ~ (change.finance_confirmed_at | dt)) if change.finance_confirmed_at else "pending" }}</dd>
+    {% endif %}
+    <dt>Executed</dt><dd>{{ (change.executed_by.full_name ~ " · " ~ (change.executed_at | dt)) if change.executed_at else "—" }}</dd>
+    <dt>Completed</dt><dd>{{ change.completed_at | dt }}</dd>
+  </dl>
+  <h3>Approvals</h3>
+  <table><thead><tr><th>#</th><th>Required role</th><th>Decision</th><th>By</th><th>Comment</th></tr></thead><tbody>
+  {% for a in change.approvals %}<tr><td>{{ a.step }}</td><td>{{ ROLE_LABELS[a.required_role] }}</td>
+    <td>{% if a.decision == "APPROVED" %}<span class="pass">✓ Approved</span>{% elif a.decision == "REJECTED" %}<span class="fail">✗ Rejected</span>{% else %}<span class="muted">Pending</span>{% endif %}</td>
+    <td>{{ a.approver.full_name if a.approver else "" }}<div class="muted small">{{ a.decided_at | dt if a.decided_at else "" }}</div></td><td>{{ a.comment or "" }}</td></tr>{% endfor %}
+  </tbody></table>
+</section>
+<section class="card stack">
+  <h2>Next step</h2>
+  {% if change.status == "PENDING_APPROVAL" %}
+    {% if can_approve %}
+    <form method="post" action="/changes/{{ change.id }}/decide" class="stack">{{ csrf() }}
+      <textarea name="comment" placeholder="Comment (required to reject)"></textarea>
+      <div class="actions"><button class="btn primary" name="decision" value="approve" type="submit">Approve</button>
+        <button class="btn danger" name="decision" value="reject" type="submit">Reject</button></div></form>
+    {% else %}<p class="muted small">{{ approve_reason }}</p>{% endif %}
+  {% elif change.status == "APPROVED" and can_execute %}
+    <h2>Execute</h2>
+    <p class="small secondary">Scan the asset's QR tag to prove the correct device is being handled.</p>
+    <form method="post" action="/changes/{{ change.id }}/execute" class="stack">{{ csrf() }}
+      <div><label for="scanned_tag">Scanned tag</label><input id="scanned_tag" name="scanned_tag" class="scan-input" required autocomplete="off" data-autofocus>
+        <button class="btn small" type="button" data-camera-scan="#scanned_tag" data-video-box="#camera">Use camera</button><div id="camera" class="scanner"></div></div>
+      {% for f in ["ticket_ref", "evidence_ref", "wipe_certificate_ref", "disposal_certificate_ref"] %}
+        {% if f in evidence or (f == "ticket_ref") %}
+        <div><label for="{{ f }}">{{ evidence_labels[f] }}{{ " (required)" if f in evidence }}</label><input id="{{ f }}" name="{{ f }}" value="{{ change[f] or '' }}" {{ "required" if f in evidence }}></div>
+        {% endif %}
+      {% endfor %}
+      <button class="btn primary" type="submit">Execute change</button></form>
+  {% elif change.status == "IN_PROGRESS" and change.change_type == "TRANSFER_BRANCH" %}
+    <h2>Confirm delivery at {{ change.to_branch.code }}</h2>
+    <form method="post" action="/changes/{{ change.id }}/deliver" class="stack">{{ csrf() }}
+      <select name="to_location_id" aria-label="Location"><option value="">— location —</option>{% for l in dest_locations %}<option value="{{ l.id }}" {{ "selected" if change.to_location_id == l.id }}>{{ l.label }}</option>{% endfor %}</select>
+      <button class="btn primary" type="submit">Sign for delivery</button></form>
+  {% elif change.status == "IN_PROGRESS" and change.change_type == "SEND_REPAIR" and can_execute %}
+    <h2>Return from repair</h2>
+    <form method="post" action="/changes/{{ change.id }}/return" class="stack">{{ csrf() }}<input name="note" placeholder="Repair outcome / vendor reference"><button class="btn primary" type="submit">Receive back into stock</button></form>
+  {% elif change.change_type == "DISPOSE" and change.status == "COMPLETED" and not change.finance_confirmed_at and can(user, "change.finance_confirm") %}
+    <h2>Finance</h2>
+    <form method="post" action="/changes/{{ change.id }}/finance">{{ csrf() }}<button class="btn primary" type="submit">Confirm fixed-asset register updated</button></form>
+  {% else %}<p class="muted small">No action required from you.</p>{% endif %}
+</section>
+</div>
+{% endblock %}

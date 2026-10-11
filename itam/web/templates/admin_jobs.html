@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% from "macros.html" import csrf with context %}
+{% block title %}Scheduled jobs{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>Scheduled jobs</h1><p>Run by the built-in scheduler (enable on one application node only), or externally with <code>python -m itam.cli run-jobs</code>.</p></div></div>
+<section class="card"><table>
+  <thead><tr><th>Job</th><th>Interval</th><th>Description</th><th>Last run</th><th>Last result</th><th></th></tr></thead>
+  <tbody>{% for j in jobs %}{% set r = runs.get(j.name) %}
+  <tr><td class="mono">{{ j.name }}</td><td>{{ j.interval }}</td><td class="secondary">{{ j.description }}</td><td>{{ r.last_run_at | ago if r else "never" }}</td><td>{{ r.last_result if r else "" }}</td>
+    <td><form method="post" action="/admin/jobs/{{ j.name }}">{{ csrf() }}<button class="btn small" type="submit">Run now</button></form></td></tr>{% endfor %}</tbody></table></section>
+{% endblock %}

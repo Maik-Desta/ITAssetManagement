@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sign in · {{ settings.bank_name }} ITAM</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <link rel="icon" href="data:,">
+</head>
+<body>
+<div class="login-wrap">
+  <div class="card login-card">
+    <div class="brand">
+      <svg width="32" height="32" viewBox="0 0 16 16" aria-hidden="true"><rect width="16" height="16" rx="3" fill="#2a78d6"/><path d="M4 4h8v3H4zM4 9h8v3H4z" fill="#fff"/></svg>
+      <div>IT Asset &amp; Infrastructure Management<br><span class="muted small">{{ settings.bank_name }}</span></div>
+    </div>
+    {% block form %}
+    {% if error %}<div class="flash error" role="alert">{{ error }}</div>{% endif %}
+    {% for category, message in messages %}<div class="flash {{ category }}">{{ message }}</div>{% endfor %}
+    <form method="post" action="/login" class="stack">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="next" value="{{ next }}">
+      <div><label for="username">Username</label><input id="username" name="username" type="text" autocomplete="username" required autofocus></div>
+      <div><label for="password">Password</label><input id="password" name="password" type="password" autocomplete="current-password" required></div>
+      <button class="btn primary" type="submit">Sign in</button>
+    </form>
+    <p class="muted small">Authorised users only. All activity is recorded in an immutable audit trail.</p>
+    {% endblock %}
+  </div>
+</div>
+</body>
+</html>

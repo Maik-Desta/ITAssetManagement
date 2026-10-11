@@ -1,0 +1,12 @@
+[project]
+name = "itam"
+version = "1.0.0"
+description = "Centralized IT Asset & Infrastructure Management platform for a 100+ branch bank"
+requires-python = ">=3.11"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+filterwarnings = ["ignore:Using `httpx` with `starlette.testclient`"]
+
+[tool.ruff]
+line-length = 120
