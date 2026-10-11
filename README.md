@@ -56,6 +56,20 @@ python -m itam.simulator --url http://127.0.0.1:8000 --cycles 10 --interval 30
 
 API documentation (OpenAPI) is at `/api/docs`.
 
+## Deploy a shareable test instance (Render)
+
+The repo includes a `render.yaml` Blueprint that creates the web app and a PostgreSQL database.
+
+1. In Render: **New → Blueprint**, then pick this repository and branch.
+2. When asked for `ITAM_DEMO_PASSWORD`, enter the password every demo user will share. If you leave it empty,
+   the default `ChangeMe!2026` is used, which is public in this README.
+3. Apply. On first start the app loads the demo data (`ITAM_DEMO_SEED=true`); restarts don't reload it.
+   The public URL is shown on the service page.
+
+Free Render instances sleep when idle, so the first request after a pause takes about a minute. The free
+database expires after 30 days. For a real deployment, remove `ITAM_DEMO_SEED` and create users through
+*Administration → Users & roles*.
+
 ## Collector API
 
 Regional collectors authenticate with `X-API-Key` (created under *Administration → Collectors* or with
@@ -85,7 +99,8 @@ Environment variables (prefix `ITAM_`):
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `DATABASE_URL` | `sqlite:///./itam.db` | SQLAlchemy URL. Use PostgreSQL in production (`postgresql+psycopg://…`) |
+| `DATABASE_URL` | `sqlite:///./itam.db` | SQLAlchemy URL. Use PostgreSQL in production. A plain `DATABASE_URL` (e.g. Render's `postgres://…`) is also accepted |
+| `DEMO_SEED` / `DEMO_PASSWORD` | `false` / `ChangeMe!2026` | Load demo data on first start into an empty database; password for the demo users |
 | `SECRET_KEY` | random per process | Session signing key. **Set it**, or sessions reset on restart |
 | `COUNTRY_CODE` / `BANK_NAME` | `KE` / `The Bank` | CC part of asset numbers; branding |
 | `MFA_REQUIRED_ROLES` | — | e.g. `ADMIN,CIO,CFO,CISO,IT_ASSET_MANAGER` |

@@ -23,9 +23,18 @@ def _env_bool(name: str, default: bool) -> bool:
     return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _database_url() -> str:
+    """ITAM_DATABASE_URL, else a platform-provided DATABASE_URL (e.g. Render), normalised for psycopg 3."""
+    url = _env("DATABASE_URL") or os.environ.get("DATABASE_URL") or "sqlite:///./itam.db"
+    for prefix in ("postgres://", "postgresql://"):
+        if url.startswith(prefix):
+            return "postgresql+psycopg://" + url[len(prefix):]
+    return url
+
+
 @dataclass
 class Settings:
-    database_url: str = field(default_factory=lambda: _env("DATABASE_URL", "sqlite:///./itam.db"))
+    database_url: str = field(default_factory=_database_url)
     secret_key: str = field(default_factory=lambda: _env("SECRET_KEY") or secrets.token_hex(32))
     # Country code used as the CC part of the asset number standard.
     country_code: str = field(default_factory=lambda: _env("COUNTRY_CODE", "KE"))
@@ -44,6 +53,9 @@ class Settings:
     secure_cookies: bool = field(default_factory=lambda: _env_bool("SECURE_COOKIES", False))
     # Comma-separated roles that must use MFA (TOTP) to sign in.
     mfa_required_roles: str = field(default_factory=lambda: _env("MFA_REQUIRED_ROLES", ""))
+
+    # Demo mode: load demo data on first start when the database is empty.
+    demo_seed: bool = field(default_factory=lambda: _env_bool("DEMO_SEED", False))
 
     # Background scheduler.
     scheduler_enabled: bool = field(default_factory=lambda: _env_bool("SCHEDULER_ENABLED", True))

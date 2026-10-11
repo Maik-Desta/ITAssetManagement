@@ -5,6 +5,7 @@ Run with ``python -m itam.cli seed``. Deterministic (fixed random seed).
 
 from __future__ import annotations
 
+import os
 import random
 import zlib
 from datetime import date, timedelta
@@ -48,7 +49,7 @@ from itam.services import discovery as disc_svc
 from itam.services import monitoring as mon_svc
 from itam.services import requests as req_svc
 
-DEMO_PASSWORD = "ChangeMe!2026"
+DEMO_PASSWORD = os.environ.get("ITAM_DEMO_PASSWORD") or "ChangeMe!2026"
 
 REGIONS = [
     # code, name, centre lat, lon, wave

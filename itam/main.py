@@ -38,10 +38,25 @@ def _back(request: Request) -> str:
     return ref if ref.startswith("/") and not ref.startswith("//") else "/dashboard"
 
 
+def _seed_if_empty() -> None:
+    from sqlalchemy import select
+
+    from itam.db import session_scope
+    from itam.models import Region
+    from itam.seed import seed
+
+    with session_scope() as db:
+        if db.execute(select(Region.id)).first() is None:
+            result = seed(db)
+            log.warning("Demo data loaded: %s", result)
+
+
 def create_app(cfg: Settings | None = None, start_scheduler: bool | None = None) -> FastAPI:
     cfg = cfg or default_settings
     init_engine(cfg.database_url)
     create_schema()
+    if cfg.demo_seed:
+        _seed_if_empty()
 
     run_scheduler = cfg.scheduler_enabled if start_scheduler is None else start_scheduler
 

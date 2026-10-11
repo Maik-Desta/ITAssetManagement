@@ -1,0 +1,37 @@
+# Render Blueprint: https://render.com/docs/blueprint-spec
+# New → Blueprint → select this repository. Creates the web app and a PostgreSQL database.
+services:
+  - type: web
+    name: itam
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn itam.main:create_app --factory --host 0.0.0.0 --port $PORT --proxy-headers --forwarded-allow-ips="*"
+    healthCheckPath: /healthz
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.7"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: itam-db
+          property: connectionString
+      - key: ITAM_SECRET_KEY
+        generateValue: true
+      - key: ITAM_SECURE_COOKIES
+        value: "true"
+      # Demo: load ~100 branches of sample data on first start. Remove for a real deployment.
+      - key: ITAM_DEMO_SEED
+        value: "true"
+      # Password for all demo users. Set it in the Render dashboard before sharing the link.
+      - key: ITAM_DEMO_PASSWORD
+        sync: false
+      - key: ITAM_COUNTRY_CODE
+        value: KE
+      - key: ITAM_BANK_NAME
+        value: The Bank
+
+databases:
+  - name: itam-db
+    plan: free
+    databaseName: itam
+    user: itam

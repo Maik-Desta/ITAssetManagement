@@ -3,7 +3,7 @@ FROM python:3.12-slim
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
 WORKDIR /app
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt "psycopg[binary]==3.2.3"
+RUN pip install --no-cache-dir -r requirements.txt
 COPY itam ./itam
 RUN useradd --system --uid 10001 itam && chown -R itam /app
 USER itam
