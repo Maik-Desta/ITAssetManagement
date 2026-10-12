@@ -381,6 +381,49 @@ details.card[open] > summary { margin-bottom: 12px; }
   .policy-path { grid-template-columns: repeat(2, minmax(0, 1fr)); } .policy-path li + li::before { display: none; } }
 @media (max-width: 760px) { .kpi-grid-6, .kpi-grid-3 { grid-template-columns: 1fr 1fr; } }
 
+/* Flashing red for critical, unacknowledged cases (slow pulse; static for reduced motion) ---------- */
+@keyframes critical-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(208, 59, 59, 0); }
+  50% { box-shadow: 0 0 0 5px rgba(208, 59, 59, .38); background-color: color-mix(in srgb, var(--critical) 16%, var(--surface-1)); }
+}
+.flash-critical { animation: critical-pulse 1.6s ease-in-out infinite; border-color: var(--critical) !important; }
+@media (prefers-reduced-motion: reduce) {
+  .flash-critical { animation: none; background-color: color-mix(in srgb, var(--critical) 12%, var(--surface-1)); }
+}
+.level-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin: 6px 0 14px; }
+.level-tile { display: flex; flex-direction: column; gap: 6px; padding: 14px 16px; border-radius: 12px; color: inherit;
+  border: 1px solid var(--border); border-top: 4px solid var(--accent); background: var(--surface-1); }
+.level-tile:hover { text-decoration: none; border-color: var(--accent); }
+.level-tile.level-ceo { border-top-color: var(--critical); }
+.level-tile.level-empty { opacity: .65; }
+.lt-head { display: flex; align-items: baseline; gap: 8px; }
+.lt-code { font-size: 1.3rem; font-weight: 800; } .lt-name { font-size: .8rem; color: var(--text-secondary); font-weight: 600; }
+.lt-count { font-size: 2.3rem; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; }
+.lt-count small { font-size: .85rem; font-weight: 500; color: var(--text-muted); }
+.lt-break { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: .78rem; color: var(--text-secondary); }
+.lt-crit { color: var(--critical-text); font-weight: 700; }
+.lt-meter { width: 100%; height: 6px; } .lt-meter .track { fill: var(--surface-2); }
+.lt-meter .fill.ok { fill: var(--good); } .lt-meter .fill.warn { fill: var(--warning); } .lt-meter .fill.bad { fill: var(--critical); }
+.lt-sla { font-size: .8rem; font-weight: 650; }
+.sla-summary { text-align: right; display: flex; flex-direction: column; } .sla-summary strong { font-size: 1.4rem; }
+.sla-strip { display: flex; height: 22px; border-radius: 6px; overflow: hidden; gap: 2px; margin-bottom: 6px; }
+.sla-strip span { flex-grow: 1; display: grid; place-items: center; font-size: .75rem; font-weight: 700; color: #fff; min-width: 22px; }
+.sla-strip .seg-met { background: var(--good); } .sla-strip .seg-on_track { background: var(--accent); }
+.sla-strip .seg-at_risk { background: var(--warning); color: #3a2600; } .sla-strip .seg-breached { background: var(--critical); }
+.sla { display: inline-flex; flex-direction: column; gap: 3px; min-width: 150px; }
+.sla-badge { display: inline-flex; align-self: flex-start; gap: 4px; padding: 1px 8px; border-radius: 999px; font-size: .74rem;
+  font-weight: 700; border: 1px solid var(--border); white-space: nowrap; }
+.sla-met .sla-badge { border-color: var(--good); color: var(--good-text); }
+.sla-on_track .sla-badge { border-color: var(--accent); color: var(--accent-strong); }
+.sla-at_risk .sla-badge { border-color: var(--warning); color: var(--warning-text); }
+.sla-breached .sla-badge { border-color: var(--critical); color: #fff; background: var(--critical); }
+.sla-meter { width: 100%; height: 5px; } .sla-meter .track { fill: var(--surface-2); }
+.sla-met .fill { fill: var(--good); } .sla-on_track .fill { fill: var(--accent); }
+.sla-at_risk .fill { fill: var(--warning); } .sla-breached .fill { fill: var(--critical); }
+.sla-time { font-size: .72rem; color: var(--text-muted); }
+.sla-cell { min-width: 170px; }
+@media (max-width: 1100px) { .level-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
 /* Timeline ------------------------------------------------------------------------------------------ */
 .timeline { list-style: none; padding: 0; margin: 0; }
 .timeline li { padding: 8px 0 8px 18px; border-left: 2px solid var(--grid); position: relative; font-size: .9rem; }

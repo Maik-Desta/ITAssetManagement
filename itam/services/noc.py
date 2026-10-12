@@ -58,6 +58,23 @@ def notification_summary(notifications: list[Notification]) -> list[dict]:
     return out
 
 
+AT_RISK_SHARE = 0.75  # warn when 75% of the response target has elapsed without acknowledgement
+
+
+def response_sla(a: Alert, now: datetime) -> dict:
+    """Did / will this case meet its response target? state: met, breached, at_risk, on_track."""
+    target = RESPONSE_MINUTES[Severity(a.severity)]
+    if a.acknowledged_at:
+        used = _minutes(a.detected_at, a.acknowledged_at)
+        state = "met" if used <= target else "breached"
+    else:
+        used = _minutes(a.detected_at, now)
+        state = "breached" if used > target else ("at_risk" if used >= target * AT_RISK_SHARE else "on_track")
+    return {"state": state, "used_min": round(used, 1), "target_min": target,
+            "pct": min(round(100 * used / target), 100) if target else 100,
+            "remaining_min": max(target - used, 0) if not a.acknowledged_at else None}
+
+
 def noc_overview(db: Session, user: User, now: datetime | None = None, window_days: int = 30) -> dict:
     now = now or utcnow()
     branches = db.execute(scope_branches(user, select(Branch).order_by(Branch.code))).scalars().all()
@@ -78,10 +95,30 @@ def noc_overview(db: Session, user: User, now: datetime | None = None, window_da
     def enrich(a: Alert) -> dict:
         return {"alert": a, "impact": IMPACT_LABELS[Severity(a.severity)], "path": escalation_path(a, now),
                 "channels": notification_summary(notes.get(a.id, [])), "ceo": ceo_informed(a),
-                "age_min": _minutes(a.occurred_at, now),
+                "age_min": _minutes(a.occurred_at, now), "sla": response_sla(a, now),
+                "critical_unacked": a.severity == Severity.P1.value and a.status == AlertStatus.OPEN.value,
                 "overdue": a.status == AlertStatus.OPEN.value and now > a.response_due_at}
 
     rows = [enrich(a) for a in open_alerts]
+    for r in rows:
+        r["level"] = max((st["level"] for st in r["path"] if st["state"] == "done"), default=0)
+
+    # Where each open case currently sits on the escalation path (highest level notified).
+    by_level = []
+    for level, lvl in enumerate(ESCALATION_LEVELS):
+        items = [r for r in rows if r["level"] == level]
+        handled = [r for r in items if r["sla"]["state"] in ("met", "on_track", "at_risk")]
+        by_level.append({
+            "level": level, "code": lvl["code"], "name": lvl["name"], "count": len(items),
+            "critical": sum(1 for r in items if r["alert"].severity == Severity.P1.value),
+            "critical_unacked": sum(1 for r in items if r["critical_unacked"]),
+            "unacked": sum(1 for r in items if r["alert"].status == AlertStatus.OPEN.value),
+            "breached": sum(1 for r in items if r["sla"]["state"] == "breached"),
+            "at_risk": sum(1 for r in items if r["sla"]["state"] == "at_risk"),
+            "compliance": round(100 * len(handled) / len(items)) if items else None,
+            "oldest_min": max((r["age_min"] for r in items), default=None),
+        })
+    sla_counts = {k: sum(1 for r in rows if r["sla"]["state"] == k) for k in ("met", "on_track", "at_risk", "breached")}
 
     # Group issues into incidents per branch (one incident per site, most severe first).
     groups: dict[int | None, dict] = {}
@@ -98,7 +135,9 @@ def noc_overview(db: Session, user: User, now: datetime | None = None, window_da
         g["offline"] |= a.category == AlertCategory.BRANCH_OFFLINE.value
         g["ceo"] |= r["ceo"]
         g["unacked"] += a.status == AlertStatus.OPEN.value
-        g["max_level"] = max(g["max_level"], max((s["level"] for s in r["path"] if s["state"] == "done"), default=0))
+        g["max_level"] = max(g["max_level"], r["level"])
+        g["critical_unacked"] = g.get("critical_unacked", False) or r["critical_unacked"]
+        g["breached"] = g.get("breached", 0) + (r["sla"]["state"] == "breached")
     incidents = sorted(groups.values(), key=lambda g: (g["severity"], not g["offline"], g["started"]))
     for g in incidents:
         g["impact"] = IMPACT_LABELS[Severity(g["severity"])]
@@ -169,5 +208,8 @@ def noc_overview(db: Session, user: User, now: datetime | None = None, window_da
         "overall": perf(recent), "performance": performance, "by_severity": by_severity, "window_days": window_days,
         "levels": ESCALATION_LEVELS, "branches": branches,
         "unacked": sum(1 for r in rows if r["alert"].status == AlertStatus.OPEN.value),
+        "by_level": by_level, "sla_counts": sla_counts,
+        "sla_compliance": (round(100 * (len(rows) - sla_counts["breached"]) / len(rows)) if rows else None),
+        "critical_unacked": sum(1 for r in rows if r["critical_unacked"]),
         "overdue": sum(1 for r in rows if r["overdue"]),
     }

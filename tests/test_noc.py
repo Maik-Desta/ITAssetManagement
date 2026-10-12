@@ -93,3 +93,43 @@ def test_noc_page_and_notifications(client, db, world):
     assert 'class="bell-n"' in client.get("/dashboard").text
     assert "is completely offline" in client.get("/notifications").text
     assert 'class="bell-n"' not in client.get("/dashboard").text  # marked read
+
+
+def test_response_sla_states(db, world):
+    from itam.services.noc import response_sla
+
+    sw = world.active_asset(world.b1, "SWT")  # P2 → 30-minute target
+    alert = mon.apply_state(db, sw, OperState.DOWN, utcnow())
+    t0 = alert.detected_at
+    assert response_sla(alert, t0 + timedelta(minutes=5))["state"] == "on_track"
+    assert response_sla(alert, t0 + timedelta(minutes=25))["state"] == "at_risk"
+    assert response_sla(alert, t0 + timedelta(minutes=40))["state"] == "breached"
+    alert.acknowledged_at = t0 + timedelta(minutes=10)
+    assert response_sla(alert, t0 + timedelta(hours=2))["state"] == "met"
+
+
+def test_cases_by_escalation_level(db, world):
+    _add_ceo(db)
+    r = world.active_asset(world.b1, "RTR")
+    mon.apply_state(db, r, OperState.DOWN, utcnow())  # branch offline → CEO immediately
+    srv = world.active_asset(world.b3, "SRV")
+    a2 = mon.apply_state(db, srv, OperState.DOWN, utcnow() - timedelta(minutes=40))
+    a2.detected_at = utcnow() - timedelta(minutes=40)
+    mon.escalate_overdue(db)  # P2 unacknowledged for 40 min → L2
+    n = noc_overview(db, world.u("noc"))
+    levels = {lvl["code"]: lvl for lvl in n["by_level"]}
+    assert levels["CEO"]["count"] == 1 and levels["CEO"]["critical_unacked"] == 1
+    assert levels["L2"]["count"] == 1 and levels["L2"]["breached"] == 1
+    assert levels["L1"]["count"] == 0 and levels["L3"]["count"] == 0
+    assert n["sla_counts"]["breached"] == 1
+
+
+def test_noc_page_flashes_critical(client, db, world):
+    r = world.active_asset(world.b1, "RTR")
+    mon.apply_state(db, r, OperState.DOWN, utcnow())
+    db.commit()
+    login(client, "noc")
+    html = client.get("/noc").text
+    assert "Open cases by escalation level" in html
+    assert html.count("flash-critical") >= 3  # banner, tiles, incident card
+    assert "On track" in html
