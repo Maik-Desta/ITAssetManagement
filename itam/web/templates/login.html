@@ -25,6 +25,7 @@
       <button class="btn primary" type="submit">Sign in</button>
     </form>
     <p class="muted small">Authorised users only. All activity is recorded in an immutable audit trail.</p>
+    <p class="muted small">Version {{ app_version }}{% if build %} · build {{ build }}{% endif %} · <a href="/healthz">status</a></p>
     {% endblock %}
   </div>
 </div>

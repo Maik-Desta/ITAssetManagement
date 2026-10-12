@@ -79,6 +79,8 @@ TEMPLATES.env.globals.update(
     SEVERITY_LABELS={k.value: v for k, v in enums.SEVERITY_LABELS.items()},
     ROLE_LABELS={k.value: v for k, v in ROLE_LABELS.items()},
     settings=settings,
+    app_version=__import__("itam").__version__,
+    build=(__import__("os").environ.get("RENDER_GIT_COMMIT") or "")[:7],
 )
 
 

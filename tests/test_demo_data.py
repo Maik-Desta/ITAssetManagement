@@ -58,3 +58,33 @@ def test_older_tagged_demo_is_replaced(db, monkeypatch):
     db.commit()
     assert main.demo_data_status() == "outdated"
     assert main.prepare_demo_data() == "replaced"
+
+
+def test_demo_data_loads_in_background_while_server_answers(settings, monkeypatch):
+    import threading
+
+    from fastapi.testclient import TestClient
+
+    from itam.main import create_app
+
+    release = threading.Event()
+
+    def slow_prepare():
+        release.wait(5)
+        return "loaded"
+
+    monkeypatch.setattr(main, "prepare_demo_data", slow_prepare)
+    settings.demo_seed = True
+    try:
+        with TestClient(create_app(settings, start_scheduler=False)) as client:
+            assert client.get("/healthz").json()["demo_data"] == "preparing"
+            page = client.get("/login")
+            assert page.status_code == 503 and "Preparing demo data" in page.text
+            release.set()
+            for _ in range(50):
+                if client.get("/healthz").json()["demo_data"] == "loaded":
+                    break
+                threading.Event().wait(0.05)
+            assert client.get("/login").status_code == 200
+    finally:
+        settings.demo_seed = False

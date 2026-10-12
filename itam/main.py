@@ -5,11 +5,13 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import os
+import threading
 from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
@@ -23,6 +25,13 @@ from itam.web import routes_admin, routes_assets, routes_assurance, routes_auth,
 from itam.web.deps import CSRFError, LoginRequired, current_user, flash, login_redirect, render
 
 log = logging.getLogger("itam")
+
+LOADING_PAGE = """<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><meta http-equiv="refresh" content="15">
+<title>Preparing demo data</title><link rel="stylesheet" href="/static/style.css"></head>
+<body><div class="login-wrap"><div class="card login-card"><h1>Preparing demo data…</h1>
+<p class="secondary">Loading the Cameroon demo: 10 regions, 250 branches and about 3,000 assets.
+This takes a minute or two after a new deploy. This page refreshes automatically.</p></div></div></body></html>"""
 
 
 def _is_api(request: Request) -> bool:
@@ -83,14 +92,26 @@ def create_app(cfg: Settings | None = None, start_scheduler: bool | None = None)
     cfg = cfg or default_settings
     init_engine(cfg.database_url)
     create_schema()
-    if cfg.demo_seed:
-        prepare_demo_data()
+    app_state = {"demo": "off"}
 
     run_scheduler = cfg.scheduler_enabled if start_scheduler is None else start_scheduler
 
     @contextlib.asynccontextmanager
     async def lifespan(_app: FastAPI):
         task = None
+        if cfg.demo_seed:
+            # Load demo data in the background so the server answers health checks immediately
+            # (a slow first load must not make the hosting platform abandon the deploy).
+            app_state["demo"] = "preparing"
+
+            def _prepare():
+                try:
+                    app_state["demo"] = prepare_demo_data()
+                except Exception:  # noqa: BLE001
+                    log.exception("Demo data preparation failed")
+                    app_state["demo"] = "failed"
+
+            threading.Thread(target=_prepare, name="demo-data", daemon=True).start()
         if run_scheduler:
             from itam.services.jobs import scheduler_loop
 
@@ -123,9 +144,19 @@ def create_app(cfg: Settings | None = None, start_scheduler: bool | None = None)
         app.include_router(module.router)
     app.include_router(api_router)
 
+    @app.middleware("http")
+    async def demo_loading(request: Request, call_next):
+        if app_state["demo"] == "preparing" and not request.url.path.startswith(("/healthz", "/static")):
+            return HTMLResponse(LOADING_PAGE, status_code=503, headers={"Retry-After": "15"})
+        return await call_next(request)
+
     @app.get("/healthz", include_in_schema=False)
     def healthz():
-        return {"status": "ok", "version": __version__}
+        from itam.seed import DEMO_DATA_VERSION
+
+        return {"status": "ok", "version": __version__, "commit": os.environ.get("RENDER_GIT_COMMIT", "")[:7] or None,
+                "demo_data": app_state["demo"], "demo_dataset": DEMO_DATA_VERSION if app_state["demo"] != "off" else None,
+                "country_code": cfg.country_code, "currency": cfg.currency}
 
     @app.exception_handler(LoginRequired)
     async def _login_required(request: Request, exc: LoginRequired):

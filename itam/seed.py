@@ -55,6 +55,7 @@ DEMO_PASSWORD = os.environ.get("ITAM_DEMO_PASSWORD") or "ChangeMe!2026"
 # Bump when the demo dataset changes; a demo database tagged with an older version is replaced on start-up.
 DEMO_DATA_VERSION = "cameroon-250-v1"
 DEMO_MARKER = "demo_dataset"
+DEMO_COUNTRY = "CM"
 
 # Cameroon: the 10 regions. (code, name, regional capital lat, lon, rollout wave, spread in degrees)
 REGIONS = [
@@ -131,10 +132,21 @@ MODELS = [
 BRANCH_KIT = [("RTR", 2), ("SWT", 2), ("FWL", 1), ("SRV", 1), ("UPS", 1), ("ATM", 2), ("EUD", 6), ("ENV", 1)]
 
 
+_DEMO_HASH: str | None = None
+
+
+def _demo_hash() -> str:
+    # Every demo user shares one password, so hash it once (scrypt is deliberately slow).
+    global _DEMO_HASH
+    if _DEMO_HASH is None:
+        _DEMO_HASH = hash_password(DEMO_PASSWORD)
+    return _DEMO_HASH
+
+
 def _user(db: Session, username: str, full_name: str, roles: list[Role], region: Region | None = None,
           branch: Branch | None = None) -> User:
     u = User(username=username, full_name=full_name, email=f"{username}@bank.local",
-             phone=f"+2376{zlib.crc32(username.encode()) % 10**8:08d}", password_hash=hash_password(DEMO_PASSWORD),
+             phone=f"+2376{zlib.crc32(username.encode()) % 10**8:08d}", password_hash=_demo_hash(),
              roles=[r.value for r in roles], region_id=region.id if region else None,
              branch_id=branch.id if branch else None, is_active=True)
     db.add(u)
@@ -152,7 +164,7 @@ def seed(db: Session, small: bool = False) -> dict:
     rnd = random.Random(42)
     now = utcnow()
     today = date.today()
-    cc = settings.country_code
+    cc = DEMO_COUNTRY  # the demo dataset is Cameroon, whatever ITAM_COUNTRY_CODE says
 
     regions = {}
     for code, name, *_ in REGIONS:
