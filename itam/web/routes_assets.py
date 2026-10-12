@@ -92,6 +92,10 @@ def _filtered(db, user, params: dict):
         q = q.where(Asset.status.in_(INSTALLED), Asset.monitored.is_(True), Asset.oper_state == "DOWN")
     elif params.get("flag") == "not_monitored":
         q = q.where(Asset.status.in_(INSTALLED), Asset.monitored.is_(False))
+    elif params.get("flag") == "store":
+        q = q.where(Asset.status == AssetStatus.IN_STOCK.value, Asset.branch.has(Branch.is_head_office.is_(True)))
+    elif params.get("flag") == "not_installed":
+        q = q.where(Asset.status == AssetStatus.IN_STOCK.value, Asset.branch.has(Branch.is_head_office.is_(False)))
     elif params.get("flag") == "pending_golive":
         q = q.where(Asset.status == AssetStatus.IN_STOCK.value, Asset.install_date.is_not(None))
     return q.order_by(Asset.asset_number)

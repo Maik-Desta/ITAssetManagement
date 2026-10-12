@@ -58,3 +58,30 @@ def test_dashboard_numbers_match_asset_list_links(client, db, world):
             continue
         page = client.get(f"/assets?flag={flag}").text
         assert f"{expected[key]:,} matching records" in page, key
+
+
+def test_deployment_stage():
+    assert dash.deployment_stage("IN_STOCK", True) == "store"
+    assert dash.deployment_stage("IN_STOCK", False) == "not_installed"
+    assert dash.deployment_stage("IN_TRANSIT", False) == "transit"
+    assert dash.deployment_stage("FAULTY", False) == "installed"
+    assert dash.deployment_stage("RETIRED", False) == "out"
+    assert dash.deployment_stage("DISPOSED", False) is None
+
+
+def test_inventory_store_and_not_installed(client, db, world):
+    _world_with_states(db, world)
+    register_asset(db, world.u("itam"), branch=world.hq, asset_type="RTR", serial_number="HQ-STOCK", purchase_cost=4800)
+    db.commit()
+    inv = dash.asset_inventory(db, [world.hq, world.b1, world.b2, world.b3])
+    assert inv["stage_totals"] == {"installed": 5, "not_installed": 1, "store": 1, "transit": 0, "out": 0}
+    assert inv["total"] == 7 and inv["store_value"] == 4800
+    assert [n["branch"].code for n in inv["not_installed"]] == ["0013"]
+    assert {t["type"]: t["total"] for t in inv["types"]}["RTR"] == 3
+    login(client, "cio")
+    html = client.get("/dashboard").text
+    for text in ("Key messages for the Board", "Deployment pipeline", "Assets by type", "Asset type by region",
+                 "Purchased, not yet assigned to a branch", "Delivered to branches, not yet installed"):
+        assert text in html
+    assert "1 matching records" in client.get("/assets?flag=store").text
+    assert "1 matching records" in client.get("/assets?flag=not_installed").text

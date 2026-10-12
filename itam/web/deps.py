@@ -239,4 +239,27 @@ def fmt_tick(v: float) -> str:
     return f"{v:g}"
 
 
-TEMPLATES.env.globals.update(nice_max=nice_max, bar_path=bar_path, fmt_tick=fmt_tick)
+def hbar_path(x: float, y: float, w: float, h: float, r: float = 4) -> str:
+    """Horizontal bar segment with a rounded data-end (right) and square start."""
+    if w <= 0:
+        return ""
+    r = min(r, h / 2, w)
+    return (f"M{x:.1f},{y:.1f} H{x + w - r:.1f} Q{x + w:.1f},{y:.1f} {x + w:.1f},{y + r:.1f} "
+            f"V{y + h - r:.1f} Q{x + w:.1f},{y + h:.1f} {x + w - r:.1f},{y + h:.1f} H{x:.1f} Z")
+
+
+def compact(value: float | None) -> str:
+    if value is None:
+        return "—"
+    for div, suffix in ((1e9, "B"), (1e6, "M"), (1e3, "K")):
+        if abs(value) >= div:
+            return f"{value / div:.1f}{suffix}"
+    return f"{value:,.0f}"
+
+
+def pct(num: float, den: float) -> int:
+    return round(100 * num / den) if den else 0
+
+
+TEMPLATES.env.globals.update(nice_max=nice_max, bar_path=bar_path, fmt_tick=fmt_tick, hbar_path=hbar_path,
+                             compact=compact, pct=pct)

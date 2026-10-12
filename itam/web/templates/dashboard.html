@@ -1,38 +1,135 @@
 {% extends "base.html" %}
-{% from "macros.html" import sev, branch_state, column_chart, line_chart, status_badge with context %}
+{% from "macros.html" import sev, branch_state, column_chart, line_chart, status_badge, kpi, hbar_stacked with context %}
 {% block title %}Executive dashboard{% endblock %}
 {% block content %}
-<div class="page-head">
-  <div><h1>State of the estate</h1>
-    <p>{% if user.region %}{{ user.region.name }} region{% elif user.branch %}{{ user.branch.name }}{% else %}All {{ s.branches_total }} sites{% endif %} · live view</p></div>
-  <div class="actions"><a class="btn" href="/kpis">Programme KPIs</a><a class="btn" href="/noc">NOC console</a></div>
+{% set bd = s.breakdown %}{% set tc = bd.totals.counts %}{% set st = inv.stage_totals %}{% set cur = inv.currency %}
+<div class="page-head board-head">
+  <div>
+    <div class="eyebrow">{{ settings.bank_name }} · IT Asset &amp; Infrastructure Management</div>
+    <h1>State of the IT estate</h1>
+    <p>{% if user.region %}{{ user.region.name }} region{% elif user.branch %}{{ user.branch.name }}{% else %}All {{ bd.totals.branches }} sites{% endif %}
+      · live data as of {{ s.generated_at | dt("%d %b %Y, %H:%M") }} UTC</p>
+  </div>
+  <div class="actions no-print">
+    <button class="btn" type="button" data-print>Print / save as PDF</button>
+    <a class="btn" href="/kpis">Programme KPIs</a><a class="btn" href="/noc">NOC console</a>
+  </div>
 </div>
 
-{% set bd = s.breakdown %}{% set tc = bd.totals.counts %}
-<div class="tiles">
-  <a class="tile" href="/branches">
-    <div class="label">Total branches</div>
-    <div class="value">{{ bd.totals.branches }}</div>
-    <div class="sub">in {{ bd.regions | length }} region{{ "s" if bd.regions | length != 1 }}</div>
-  </a>
-  <a class="tile" href="/branches">
-    <div class="label">Branches active &amp; monitored</div>
-    <div class="value">{{ bd.totals.monitored }} <small>/ {{ bd.totals.branches }}</small></div>
-    <div class="sub">{{ bd.totals.online }} online now · {{ bd.totals.branches - bd.totals.monitored }} not yet onboarded</div>
-  </a>
-  <a class="tile" href="/assets"><div class="label">Assets registered</div><div class="value">{{ "{:,}".format(tc.total) }}</div><div class="sub">excluding disposed</div></a>
-  <a class="tile" href="/assets?flag=installed"><div class="label">Assets installed</div><div class="value">{{ "{:,}".format(tc.installed) }}</div><div class="sub">in service at branches (active or faulty)</div></a>
-  <a class="tile" href="/assets?flag=live"><div class="label">Assets live</div><div class="value">{{ "{:,}".format(tc.live) }}</div><div class="sub">installed and working with no issues</div></a>
-  <a class="tile" href="/assets?flag=issues"><div class="label">Assets with issues</div><div class="value">{{ tc.issues }}</div><div class="sub">{{ tc.down }} down · faulty, degraded, missing or in repair</div></a>
-  <a class="tile" href="/assets?flag=not_monitored"><div class="label">Installed, not monitored</div><div class="value">{{ tc.not_monitored }}</div><div class="sub">e.g. desktops without an agent</div></a>
-  <div class="tile"><div class="label">Healthy assets</div><div class="value">{{ s.healthy_pct if s.healthy_pct is not none else "—" }}<small>%</small></div><div class="sub">of {{ s.installed_monitored }} installed &amp; monitored</div></div>
-  <a class="tile" href="/exceptions?type=ROGUE_DEVICE"><div class="label">Missing / rogue</div><div class="value">{{ s.missing }} <small>/ {{ s.rogue }}</small></div><div class="sub">target 0 unexplained removals</div></a>
-  <a class="tile" href="/noc"><div class="label">Open P1 / P2</div><div class="value">{{ s.open_p1 }} <small>/ {{ s.open_p2 }}</small></div><div class="sub">{{ s.unapproved_changes }} unapproved changes (30 d)</div></a>
+{# ---------------- Headline KPIs ---------------- #}
+<div class="kpi-grid">
+  {{ kpi("Total branches", bd.totals.branches, bd.totals.monitored ~ " monitored · " ~ (bd.totals.branches - bd.totals.monitored) ~ " to onboard",
+         "/branches", "info", "branch", (bd.totals.monitored, bd.totals.branches)) }}
+  {{ kpi("Branches online now", bd.totals.online ~ " / " ~ bd.totals.monitored,
+         (bd.totals.monitored - bd.totals.online) ~ " offline of those monitored",
+         "/noc", "good" if bd.totals.online == bd.totals.monitored else "critical", "pulse", (bd.totals.online, bd.totals.monitored)) }}
+  {{ kpi("Total IT assets", "{:,}".format(inv.total), cur ~ " " ~ inv.total_value_compact ~ " at purchase cost",
+         "/assets", "info", "box") }}
+  {{ kpi("Installed & live", "{:,}".format(tc.live),
+         "{:,}".format(tc.installed) ~ " installed · " ~ pct(tc.live, inv.total) ~ "% of all assets live",
+         "/assets?flag=live", "good", "check", (tc.live, inv.total)) }}
+  {{ kpi("Purchased, not in service", "{:,}".format(st.store + st.transit + st.not_installed),
+         st.store ~ " central store · " ~ st.transit ~ " in transit · " ~ st.not_installed ~ " at branch not installed",
+         "#deployment", "warning" if (st.store + st.not_installed) else "good", "truck") }}
+  {{ kpi("Assets with issues", tc.issues, tc.down ~ " down · " ~ s.missing ~ " missing (unexplained)",
+         "/assets?flag=issues", "critical" if tc.issues else "good", "alert") }}
+  {{ kpi("Open critical alerts", s.open_p1 ~ " / " ~ s.open_p2, "P1 critical / P2 high · " ~ s.unapproved_changes ~ " unapproved changes (30 d)",
+         "/noc", "critical" if s.open_p1 else ("warning" if s.open_p2 else "good"), "shield") }}
+  {{ kpi("Warranty / support due", s.due_count, "assets expiring within 90 days", "#warranty",
+         "warning" if s.due_count else "good", "clock") }}
+</div>
+
+{# ---------------- Key messages + deployment pipeline ---------------- #}
+<div class="stack">
+  <section class="card">
+    <h2>Key messages for the Board</h2>
+    <ul class="messages two-col">
+      {% for m in messages_board %}
+      <li class="msg tone-{{ m.tone }}"><span class="dot {{ {'good': 'good', 'warning': 'warning', 'critical': 'critical'}.get(m.tone, 'info') }}"></span>
+        <span><strong class="sr-only">{{ m.tone }}: </strong>{{ m.text }}</span></li>
+      {% endfor %}
+    </ul>
+  </section>
+  <section class="card" id="deployment">
+    <h2>Deployment pipeline</h2>
+    <p class="muted small">Where every purchased asset is between order and service.</p>
+    <ol class="pipeline">
+      <li><a href="/requests?status=ORDERED"><span class="p-count">{{ inv.on_order_qty }}</span><span class="p-label">On order</span><span class="p-sub">PO raised, not received{% if inv.awaiting_po %} · {{ inv.awaiting_po }} awaiting PO{% endif %}</span></a></li>
+      <li><a href="#store"><span class="p-count">{{ st.store }}</span><span class="p-label"><span class="swatch stage-store"></span>Central store</span><span class="p-sub">{{ cur }} {{ compact(inv.stage_value.store) }} not yet assigned</span></a></li>
+      <li><a href="/changes?view=open"><span class="p-count">{{ st.transit }}</span><span class="p-label"><span class="swatch stage-transit"></span>In transit</span><span class="p-sub">dispatched to branches</span></a></li>
+      <li><a href="#not-installed"><span class="p-count">{{ st.not_installed }}</span><span class="p-label"><span class="swatch stage-not_installed"></span>At branch, not installed</span><span class="p-sub">{{ inv.not_installed | length }} branches</span></a></li>
+      <li><a href="/assets?flag=installed"><span class="p-count">{{ "{:,}".format(st.installed) }}</span><span class="p-label"><span class="swatch stage-installed"></span>Installed</span><span class="p-sub">{{ "{:,}".format(tc.live) }} live · {{ tc.issues }} with issues</span></a></li>
+    </ol>
+    <p class="small muted">Out of service (repair, missing, retired awaiting disposal): <strong>{{ st.out }}</strong></p>
+  </section>
+</div>
+
+{# ---------------- Inventory charts ---------------- #}
+<h2 class="section-title">Asset inventory</h2>
+<div class="grid grid-2">
+  <section class="card">
+    <h2>Assets by type</h2>
+    <p class="muted small">Total at the Bank by asset type and deployment stage. Hover a bar for detail.</p>
+    {% set type_rows = [] %}{% for t in inv.types %}{% set _ = type_rows.append({"label": t.label, "href": "/assets?type=" ~ t.type, "total": t.total, "stages": t.stages}) %}{% endfor %}
+    {{ hbar_stacked(type_rows, inv.stages, "Assets by type and deployment stage") }}
+  </section>
+  <section class="card">
+    <h2>Assets by region</h2>
+    <p class="muted small">Total per region by deployment stage. The central store sits in {{ (inv.regions | selectattr("stages.store") | map(attribute="region.code") | first) or "head office" }}.</p>
+    {% set region_rows = [] %}{% for r in inv.regions %}{% set _ = region_rows.append({"label": r.region.code ~ " · " ~ r.region.name, "href": "/assets?region=" ~ r.region.code, "total": r.total, "stages": r.stages}) %}{% endfor %}
+    {{ hbar_stacked(region_rows, inv.stages, "Assets by region and deployment stage") }}
+  </section>
 </div>
 
 <section class="card">
+  <h2>Asset type by region</h2>
+  <p class="muted small">Count of assets (excluding disposed). Darker cells hold more assets. Click a number to open the list.</p>
+  <div class="table-wrap"><table class="heatmap">
+    <thead><tr><th>Region</th>{% for t in inv.matrix_types %}<th class="num" title="{{ TYPE_LABELS[t] }}">{{ TYPE_LABELS[t] }}</th>{% endfor %}<th class="num">Total</th><th class="num">Value ({{ cur }})</th></tr></thead>
+    <tbody>{% for row in inv.matrix %}{% set rv = (inv.regions | selectattr("region.id", "equalto", row.region.id) | first).value %}
+      <tr><td><a href="/branches?region={{ row.region.code }}">{{ row.region.code }} · {{ row.region.name }}</a></td>
+        {% for c in row.cells %}{% set lvl = ((c / inv.matrix_max) * 5) | round(0, "ceil") | int if c and inv.matrix_max else 0 %}
+        <td class="num heat seq-{{ lvl }}">{% if c %}<a href="/assets?region={{ row.region.code }}&type={{ inv.matrix_types[loop.index0] }}">{{ "{:,}".format(c) }}</a>{% else %}<span class="muted">–</span>{% endif %}</td>{% endfor %}
+        <td class="num"><strong>{{ "{:,}".format(row.total) }}</strong></td><td class="num">{{ compact(rv) }}</td></tr>
+    {% endfor %}</tbody>
+    <tfoot><tr><td>Bank total</td>      {% for code in inv.matrix_types %}{% set t = inv.types | selectattr("type", "equalto", code) | first %}<td class="num"><a href="/assets?type={{ code }}">{{ "{:,}".format(t.total) }}</a></td>{% endfor %}
+      <td class="num">{{ "{:,}".format(inv.total) }}</td><td class="num">{{ compact(inv.total_value) }}</td></tr></tfoot>
+  </table></div>
+</section>
+
+<div class="grid grid-2">
+  <section class="card" id="store">
+    <h2>Purchased, not yet assigned to a branch</h2>
+    <p class="muted small">Stock in the central store: {{ st.store }} assets, {{ cur }} {{ compact(inv.store_value) }}. Stock held for more than 90 days is flagged.</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Type</th><th>Model</th><th class="num">Qty</th><th class="num">Value ({{ cur }})</th><th class="num">Oldest (days)</th></tr></thead>
+      <tbody>{% for g in inv.store %}
+        <tr><td><a href="/assets?flag=store&type={{ g.type }}">{{ g.label }}</a></td><td class="small">{{ g.model }}</td>
+          <td class="num"><strong>{{ g.count }}</strong></td><td class="num">{{ compact(g.value) }}</td>
+          <td class="num {{ 'warn-text' if g.oldest_days > 90 }}">{{ g.oldest_days }}{% if g.oldest_days > 90 %} ⚠{% endif %}</td></tr>
+      {% else %}<tr><td colspan="5" class="muted">The central store is empty.</td></tr>{% endfor %}</tbody>
+    </table></div>
+  </section>
+  <section class="card" id="not-installed">
+    <h2>Delivered to branches, not yet installed</h2>
+    <p class="muted small">{{ st.not_installed }} assets at {{ inv.not_installed | length }} branches are waiting for installation and go-live.</p>
+    <div class="table-wrap table-scroll"><table>
+      <thead><tr><th>Branch</th><th>Rollout stage</th><th>Types</th><th class="num">Qty</th><th class="num">Oldest (days)</th></tr></thead>
+      <tbody>{% for n in inv.not_installed %}
+        <tr><td><a href="/assets?branch={{ n.branch.code }}&flag=not_installed">{{ n.branch.code }} {{ n.branch.name }}</a></td>
+          <td class="small">{{ n.branch.rollout_stage.replace("_", " ").title() }}</td>
+          <td class="small">{% for t, c in n.types | dictsort %}{{ t }}&nbsp;{{ c }}{% if not loop.last %}, {% endif %}{% endfor %}</td>
+          <td class="num"><strong>{{ n.count }}</strong></td><td class="num {{ 'warn-text' if n.oldest_days > 30 }}">{{ n.oldest_days }}</td></tr>
+      {% else %}<tr><td colspan="5" class="muted">Everything delivered has been installed.</td></tr>{% endfor %}</tbody>
+    </table></div>
+  </section>
+</div>
+
+{# ---------------- Health by region / branch ---------------- #}
+<h2 class="section-title">Service health</h2>
+<section class="card">
   <h2>Assets by region</h2>
-  <p class="muted small">Click any number to open the matching assets.
+  <p class="muted small">Health of installed assets. Click any number to open the matching assets.
     {% for key, label, flag, help in bd.columns %}<strong>{{ label }}</strong>: {{ help | lower }}{{ "; " if not loop.last else "." }} {% endfor %}</p>
   <div class="table-wrap"><table>
     <thead><tr><th>Region</th><th class="num">Branches</th><th class="num">Monitored</th><th class="num">Online</th>
@@ -45,7 +142,7 @@
         <td class="num {{ 'fail' if key in ('issues', 'down') and n }}"><a href="/assets?region={{ r.region.code }}&flag={{ flag }}">{{ "{:,}".format(n) }}</a></td>{% endfor %}</tr>
     {% endfor %}
     </tbody>
-    <tfoot><tr class="total-row"><td>All regions</td><td class="num">{{ bd.totals.branches }}</td><td class="num">{{ bd.totals.monitored }}</td><td class="num">{{ bd.totals.online }}</td>
+    <tfoot><tr><td>All regions</td><td class="num">{{ bd.totals.branches }}</td><td class="num">{{ bd.totals.monitored }}</td><td class="num">{{ bd.totals.online }}</td>
       {% for key, label, flag, help in bd.columns %}<td class="num"><a href="/assets?flag={{ flag }}">{{ "{:,}".format(tc[key]) }}</a></td>{% endfor %}</tr></tfoot>
   </table></div>
 </section>
@@ -55,8 +152,7 @@
     <div><h2>Assets by branch</h2>
       {% set empty_branches = bd.branches | selectattr("counts.total", "equalto", 0) | list %}
       <p class="muted small">Branches with problems are listed first.{% if empty_branches %} {{ empty_branches | length }} branch(es) have no registered assets yet (not onboarded) and are hidden.{% endif %}</p></div>
-    <form method="get" action="/dashboard#by-branch" class="actions">
-      <label for="region" class="sr-only">Region</label>
+    <form method="get" action="/dashboard#by-branch" class="actions no-print">
       <select id="region" name="region" data-autosubmit aria-label="Region">
         <option value="">All regions</option>
         {% for r in bd.regions %}<option value="{{ r.region.code }}" {{ "selected" if region == r.region.code }}>{{ r.region.code }} · {{ r.region.name }}</option>{% endfor %}
@@ -65,18 +161,22 @@
   </div>
   <div class="table-wrap table-scroll"><table>
     <thead><tr><th>Branch</th><th>Region</th><th>Status</th>
-      {% for key, label, flag, help in bd.columns %}<th class="num" title="{{ help }}">{{ label }}</th>{% endfor %}</tr></thead>
+      {% for key, label, flag, help in bd.columns %}<th class="num" title="{{ help }}">{{ label }}</th>{% endfor %}<th class="num" title="Delivered but not installed">Not installed</th></tr></thead>
     <tbody>
     {% for row in bd.branches | rejectattr("counts.total", "equalto", 0) | sort(attribute="branch.code") | sort(attribute="counts.issues", reverse=True) if not region or row.branch.region.code == region %}
+      {% set ni = (inv.branch_stages.get(row.branch.id) or {}).get("not_installed", 0) if not row.branch.is_head_office else 0 %}
       <tr><td><a href="/branches/{{ row.branch.id }}">{{ row.branch.code }} {{ row.branch.name }}</a></td>
         <td>{{ row.branch.region.code }}</td><td>{{ branch_state(row.state) }}</td>
         {% for key, label, flag, help in bd.columns %}{% set n = row.counts[key] %}
-        <td class="num {{ 'fail' if key in ('issues', 'down') and n }}">{% if n %}<a href="/assets?branch={{ row.branch.code }}&flag={{ flag }}">{{ n }}</a>{% else %}<span class="muted">0</span>{% endif %}</td>{% endfor %}</tr>
-    {% else %}<tr><td colspan="9" class="muted">No branches with registered assets.</td></tr>{% endfor %}
+        <td class="num {{ 'fail' if key in ('issues', 'down') and n }}">{% if n %}<a href="/assets?branch={{ row.branch.code }}&flag={{ flag }}">{{ n }}</a>{% else %}<span class="muted">0</span>{% endif %}</td>{% endfor %}
+        <td class="num {{ 'warn-text' if ni }}">{% if ni %}<a href="/assets?branch={{ row.branch.code }}&flag=not_installed">{{ ni }}</a>{% else %}<span class="muted">0</span>{% endif %}</td></tr>
+    {% else %}<tr><td colspan="10" class="muted">No branches with registered assets.</td></tr>{% endfor %}
     </tbody>
   </table></div>
 </section>
 
+{# ---------------- Operations & risk ---------------- #}
+<h2 class="section-title">Operations &amp; risk</h2>
 <div class="grid grid-main">
   <section class="card">
     <h2>Live branch map</h2>
@@ -88,12 +188,12 @@
     {%- set sx = (W - 2 * P) / ((lo1 - lo0) or 1) -%}{%- set sy = (H - 2 * P) / ((la1 - la0) or 1) -%}
     {%- set k = [sx, sy] | min -%}
     <svg class="chart" viewBox="0 0 {{ W }} {{ H }}" role="img" aria-label="Map of branches coloured by status">
-      {% for st in ["not_monitored", "online", "degraded", "offline"] %}
-      {% for b in geo if s.branch_states.get(b.id) == st %}
+      {% for stt in ["not_monitored", "online", "degraded", "offline"] %}
+      {% for b in geo if s.branch_states.get(b.id) == stt %}
       <a href="/branches/{{ b.id }}">
-        <circle class="map-dot {{ st }}" tabindex="0" r="{{ 7 if st == 'offline' else 5 }}"
+        <circle class="map-dot {{ stt }}" tabindex="0" r="{{ 7 if stt == 'offline' else 5 }}"
           cx="{{ P + (b.longitude - lo0) * k }}" cy="{{ P + (la1 - b.latitude) * k }}"
-          data-tip="{{ b.code }} {{ b.name }} — {{ st.replace('_', ' ').title() }}"/>
+          data-tip="{{ b.code }} {{ b.name }} — {{ stt.replace('_', ' ').title() }}"/>
       </a>
       {% endfor %}{% endfor %}
     </svg>
@@ -119,7 +219,7 @@
       {% endfor %}
     </tbody></table>
     {% else %}<p class="muted">No open alerts.</p>{% endif %}
-    <p><a href="/noc">All alerts →</a></p>
+    <p class="no-print"><a href="/noc">All alerts →</a></p>
   </section>
 </div>
 
@@ -133,7 +233,7 @@
 </div>
 
 <div class="grid grid-2">
-  <section class="card">
+  <section class="card" id="warranty">
     <h2>Warranty / end of support due in 90 days <span class="muted small">({{ s.due_count }})</span></h2>
     {% if s.due %}
     <div class="table-wrap"><table>
@@ -150,7 +250,7 @@
       <div><h3>Highest</h3><table><tbody>{% for r in s.league_top %}<tr><td><a href="/branches/{{ r.branch.id }}">{{ r.branch.code }} {{ r.branch.name }}</a></td><td class="num">{{ r.score }}</td></tr>{% endfor %}</tbody></table></div>
       <div><h3>Lowest</h3><table><tbody>{% for r in s.league_bottom %}<tr><td><a href="/branches/{{ r.branch.id }}">{{ r.branch.code }} {{ r.branch.name }}</a></td><td class="num">{{ r.score }}</td></tr>{% endfor %}</tbody></table></div>
     </div>
-    <p><a href="/data-quality">Full league table →</a></p>
+    <p class="no-print"><a href="/data-quality">Full league table →</a></p>
   </section>
 </div>
 {% endblock %}

@@ -185,7 +185,7 @@ def seed(db: Session, small: bool = False) -> dict:
     itam = _user(db, "itam", "IT Asset Manager", [Role.IT_ASSET_MANAGER])
     _user(db, "noc", "NOC Analyst", [Role.NOC])
     _user(db, "noc2", "NOC Analyst (night)", [Role.NOC])
-    _user(db, "procurement", "Procurement Officer", [Role.PROCUREMENT])
+    procurement = _user(db, "procurement", "Procurement Officer", [Role.PROCUREMENT])
     finance = _user(db, "finance", "Fixed-Asset Accountant", [Role.FINANCE])
     _user(db, "audit", "Internal Auditor", [Role.INTERNAL_AUDIT])
     leads, engineers = {}, {}
@@ -249,7 +249,8 @@ def seed(db: Session, small: bool = False) -> dict:
                 options = models.get(atype)
                 model = options[0] if len(options) == 1 or rnd.random() > 0.15 else options[1]
                 installed_days = rnd.randint(30, 365 * 8)
-                live = b.rollout_stage == RolloutStage.LIVE.value
+                # Installed from Day +1 (verify) onwards; at "on site" the kit is delivered but not yet installed.
+                live = b.rollout_stage in (RolloutStage.VERIFY.value, RolloutStage.SIGN_OFF.value, RolloutStage.LIVE.value)
                 loc = hall if atype == "ATM" else office if atype == "EUD" else comms
                 fields = dict(
                     location_id=loc.id, rack_u=f"U{2 * n + 1}" if loc is comms else None,
@@ -259,8 +260,9 @@ def seed(db: Session, small: bool = False) -> dict:
                     contract_id=rnd.choice(contracts).id if rnd.random() > 0.08 else None,
                     purchase_cost=float(rnd.choice([1200, 2500, 4800, 9500, 18000, 32000])),
                     finance_asset_ref=f"FA-{100000 + created}" if rnd.random() > 0.06 else None,
-                    install_date=today - timedelta(days=installed_days),
-                    received_date=today - timedelta(days=installed_days + 14),
+                    install_date=today - timedelta(days=installed_days) if live or b.is_head_office else None,
+                    received_date=(today - timedelta(days=installed_days + 14) if live or b.is_head_office
+                                   else today - timedelta(days=rnd.randint(2, 40))),
                     pci_scope=atype in ("ATM", "FWL", "SRV", "RTR"),
                     holds_customer_data=atype in ("SRV", "ATM", "STO"),
                 )
@@ -280,13 +282,17 @@ def seed(db: Session, small: bool = False) -> dict:
                 created += 1
     db.flush()
 
-    # Some stock in the central store.
-    for atype in ("RTR", "SWT", "EUD", "EUD", "UPS"):
-        asset_svc.register_asset(db, itam, branch=hq, asset_type=atype, serial_number=f"ST{atype}{rnd.randint(100000, 999999)}",
-                                 model_id=models[atype][0].id, contract_id=contracts[0].id, purchase_cost=1500.0,
-                                 finance_asset_ref=f"FA-{200000 + rnd.randint(0, 9999)}",
-                                 location_id=db.execute(select(Location).where(Location.branch_id == hq.id,
-                                                                               Location.room == "Central store")).scalar_one().id)
+    # Purchased stock held in the central store, not yet assigned to a branch (received over recent months).
+    store_loc = db.execute(select(Location).where(Location.branch_id == hq.id,
+                                                  Location.room == "Central store")).scalar_one().id
+    for atype, qty, cost in (("RTR", 6, 4800.0), ("SWT", 8, 2500.0), ("FWL", 3, 9500.0), ("SRV", 2, 18000.0),
+                             ("UPS", 5, 1200.0), ("EUD", 18, 1200.0), ("ATM", 2, 32000.0)):
+        for _ in range(qty):
+            asset_svc.register_asset(db, itam, branch=hq, asset_type=atype,
+                                     serial_number=f"ST{atype}{rnd.randint(100000, 999999)}",
+                                     model_id=models[atype][0].id, contract_id=contracts[0].id, purchase_cost=cost,
+                                     finance_asset_ref=f"FA-{200000 + rnd.randint(0, 9999)}", location_id=store_loc,
+                                     received_date=today - timedelta(days=rnd.choice([3, 10, 21, 45, 75, 120, 200])))
 
     live_branches = [b for b in branches if b.rollout_stage == RolloutStage.LIVE.value and not b.is_head_office]
 
@@ -372,6 +378,8 @@ def seed(db: Session, small: bool = False) -> dict:
     t = change_svc.create_change(db, engineers["NRB"], eud, ChangeType.TRANSFER_BRANCH, "Staff relocation",
                                  to_branch=live_branches[6])
     change_svc.decide(db, managers[live_branches[5].id], t, True, "OK")
+    change_svc.decide(db, itam, t, True, "OK")
+    change_svc.execute(db, engineers["NRB"], t, eud.asset_number, evidence_ref="TN-2026-0311")  # now in transit
     # A completed disposal awaiting Finance confirmation.
     old = [a for a in live_branches[8].assets if a.asset_type == "EUD"][1]
     rc = change_svc.create_change(db, engineers["NRB"], old, ChangeType.RETIRE, "Beyond economic repair",
@@ -393,6 +401,7 @@ def seed(db: Session, small: bool = False) -> dict:
                                 model_id=models["RTR"][0].id, estimated_cost=4800)
     req_svc.approve(db, itam, r2, "it")
     req_svc.approve(db, finance, r2, "budget")
+    req_svc.record_po(db, procurement, r2, "PO-2026-0457", "Dimension Data")
 
     # Programme milestones (decision gates G1-G5) and budget.
     start = today - timedelta(days=200)

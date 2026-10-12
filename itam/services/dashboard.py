@@ -164,6 +164,7 @@ def executive_summary(db: Session, user: User) -> dict:
     league = league_table(db, branches)
     breakdown = asset_breakdown(db, branches)
     return {
+        "generated_at": utcnow(),
         "breakdown": breakdown,
         "branches": branches,
         "branch_states": states,
@@ -338,3 +339,156 @@ def asset_breakdown(db: Session, branches: list[Branch]) -> dict:
     branch_rows = [{"branch": b, "state": states.get(b.id), "counts": per_branch[b.id]} for b in branches]
     return {"columns": BREAKDOWN_COLUMNS, "regions": sorted(regions.values(), key=lambda r: r["region"].code),
             "branches": branch_rows, "totals": totals}
+
+
+# ---------------------------------------------------------------------------
+# Asset inventory: where every asset is in its deployment journey (board view)
+# ---------------------------------------------------------------------------
+
+# Deployment stages in chart stacking order; colour slots 1-5 follow this order (style.css .stage-*).
+STAGES = [
+    ("installed", "Installed", "In service at a branch (including faulty)"),
+    ("not_installed", "At branch, not installed", "Delivered to the branch but not yet installed and live"),
+    ("store", "Central store", "Purchased and received, not yet assigned to a branch"),
+    ("transit", "In transit", "Dispatched to a branch, not yet signed for"),
+    ("out", "Out of service", "Under repair, missing or retired awaiting disposal"),
+]
+STAGE_KEYS = [k for k, *_ in STAGES]
+
+
+def deployment_stage(status: str, is_head_office: bool) -> str | None:
+    if status == AssetStatus.DISPOSED.value:
+        return None
+    if status in INSTALLED:
+        return "installed"
+    if status == AssetStatus.IN_TRANSIT.value:
+        return "transit"
+    if status == AssetStatus.IN_STOCK.value:
+        return "store" if is_head_office else "not_installed"
+    return "out"
+
+
+def _compact(value: float) -> str:
+    for div, suffix in ((1e9, "B"), (1e6, "M"), (1e3, "K")):
+        if abs(value) >= div:
+            return f"{value / div:.1f}{suffix}"
+    return f"{value:,.0f}"
+
+
+def asset_inventory(db: Session, branches: list[Branch]) -> dict:
+    from itam.enums import TYPE_LABELS, AssetType, RequestStatus
+    from itam.models import AssetModel, EquipmentRequest
+
+    ids = [b.id for b in branches] or [-1]
+    by_branch = {b.id: b for b in branches}
+    rows = db.execute(
+        select(Asset.branch_id, Asset.asset_type, Asset.status, Asset.model_id, Asset.received_date,
+               Asset.purchase_cost)
+        .where(Asset.branch_id.in_(ids), Asset.status != AssetStatus.DISPOSED.value)
+    ).all()
+
+    empty_stages = lambda: dict.fromkeys(STAGE_KEYS, 0)  # noqa: E731
+    types = {t.value: {"type": t.value, "label": TYPE_LABELS[t], "total": 0, "value": 0.0, "stages": empty_stages()}
+             for t in AssetType}
+    regions: dict[int, dict] = {}
+    branch_stages: dict[int, dict] = {}
+    matrix: dict[tuple[int, str], int] = {}
+    stage_totals = empty_stages()
+    stage_value = dict.fromkeys(STAGE_KEYS, 0.0)
+    store_groups: dict[tuple[str, int | None], dict] = {}
+    not_installed_branches: dict[int, dict] = {}
+    today = date.today()
+    total_value = 0.0
+
+    for branch_id, atype, status, model_id, received, cost in rows:
+        b = by_branch[branch_id]
+        stage = deployment_stage(status, b.is_head_office)
+        cost = float(cost or 0)
+        total_value += cost
+        stage_totals[stage] += 1
+        stage_value[stage] += cost
+        t = types[atype]
+        t["total"] += 1
+        t["value"] += cost
+        t["stages"][stage] += 1
+        r = regions.setdefault(b.region_id, {"region": b.region, "total": 0, "value": 0.0, "stages": empty_stages()})
+        r["total"] += 1
+        r["value"] += cost
+        r["stages"][stage] += 1
+        branch_stages.setdefault(branch_id, empty_stages())[stage] += 1
+        matrix[(b.region_id, atype)] = matrix.get((b.region_id, atype), 0) + 1
+        age = (today - received).days if received else None
+        if stage == "store":
+            g = store_groups.setdefault((atype, model_id), {"type": atype, "model_id": model_id, "count": 0,
+                                                            "value": 0.0, "oldest_days": 0})
+            g["count"] += 1
+            g["value"] += cost
+            g["oldest_days"] = max(g["oldest_days"], age or 0)
+        elif stage == "not_installed":
+            n = not_installed_branches.setdefault(branch_id, {"branch": b, "count": 0, "oldest_days": 0, "types": {}})
+            n["count"] += 1
+            n["oldest_days"] = max(n["oldest_days"], age or 0)
+            n["types"][atype] = n["types"].get(atype, 0) + 1
+
+    models = {m.id: m for m in db.execute(select(AssetModel)).scalars()}
+    store = sorted(store_groups.values(), key=lambda g: (-g["count"], g["type"]))
+    for g in store:
+        g["model"] = models[g["model_id"]].display if g["model_id"] in models else "—"
+        g["label"] = TYPE_LABELS[AssetType(g["type"])]
+
+    on_order = db.execute(select(EquipmentRequest).where(
+        EquipmentRequest.status.in_([RequestStatus.APPROVED.value, RequestStatus.ORDERED.value]),
+        EquipmentRequest.branch_id.in_(ids))).scalars().all()
+    on_order_qty = sum(r.quantity - r.received_quantity for r in on_order if r.status == RequestStatus.ORDERED.value)
+    awaiting_po = sum(r.quantity for r in on_order if r.status == RequestStatus.APPROVED.value)
+
+    type_rows = sorted((t for t in types.values() if t["total"]), key=lambda t: -t["total"])
+    region_rows = sorted(regions.values(), key=lambda r: r["region"].code)
+    present_types = [t["type"] for t in type_rows]
+    matrix_rows = [{"region": r["region"], "cells": [matrix.get((r["region"].id, t), 0) for t in present_types],
+                    "total": r["total"]} for r in region_rows]
+    matrix_max = max([c for row in matrix_rows for c in row["cells"]] or [0])
+
+    return {
+        "stages": STAGES, "stage_totals": stage_totals, "stage_value": stage_value,
+        "total": sum(stage_totals.values()), "total_value": total_value, "total_value_compact": _compact(total_value),
+        "types": type_rows, "regions": region_rows, "branch_stages": branch_stages,
+        "matrix_types": present_types, "matrix": matrix_rows, "matrix_max": matrix_max,
+        "store": store, "store_value": stage_value["store"],
+        "not_installed": sorted(not_installed_branches.values(), key=lambda n: (-n["count"], n["branch"].code)),
+        "on_order_qty": on_order_qty, "awaiting_po": awaiting_po, "currency": settings.currency,
+    }
+
+
+def key_messages(summary: dict, inv: dict) -> list[dict]:
+    """Plain-language headlines for the CEO and Board, generated from live data."""
+    bd = summary["breakdown"]
+    tot = bd["totals"]
+    c = tot["counts"]
+    msgs = []
+    pct = round(100 * tot["monitored"] / tot["branches"]) if tot["branches"] else 0
+    msgs.append({"tone": "good" if pct >= 95 else "info",
+                 "text": f"{tot['monitored']} of {tot['branches']} branches ({pct}%) are onboarded and monitored live; "
+                         f"{tot['branches'] - tot['monitored']} are scheduled in the remaining rollout waves."})
+    msgs.append({"tone": "info",
+                 "text": f"The Bank holds {inv['total']:,} IT assets worth {inv['currency']} {inv['total_value_compact']} at cost; "
+                         f"{c['installed']:,} are installed and {c['live']:,} are live with no issues."})
+    if c["issues"] or summary["open_p1"]:
+        msgs.append({"tone": "critical" if summary["open_p1"] else "warning",
+                     "text": f"{c['issues']} assets need attention ({c['down']} down); {summary['open_p1']} critical (P1) "
+                             f"and {summary['open_p2']} high (P2) alerts are open."})
+    else:
+        msgs.append({"tone": "good", "text": "No assets are currently down and no critical alerts are open."})
+    idle = inv["stage_totals"]["store"] + inv["stage_totals"]["not_installed"]
+    if idle:
+        msgs.append({"tone": "warning",
+                     "text": f"{idle} purchased assets are not yet in service: {inv['stage_totals']['store']} in the central "
+                             f"store and {inv['stage_totals']['not_installed']} delivered to branches but not installed "
+                             f"({inv['currency']} {_compact(inv['stage_value']['store'] + inv['stage_value']['not_installed'])})."})
+    msgs.append({"tone": "critical" if summary["missing"] else "good",
+                 "text": (f"{summary['missing']} assets are missing without an approved change and are under investigation."
+                          if summary["missing"] else "No unexplained asset removals.")})
+    if summary["due_count"]:
+        msgs.append({"tone": "warning",
+                     "text": f"{summary['due_count']} assets reach warranty expiry or end of vendor support within 90 days."})
+    return msgs

@@ -19,7 +19,7 @@
     {% for r in regions %}<option value="{{ r.code }}" {{ "selected" if params.get("region") == r.code }}>{{ r.code }}</option>{% endfor %}</select></div>
   <div class="field"><label for="branch">Branch code</label><input id="branch" name="branch" value="{{ params.get('branch', '') }}" size="5"></div>
   <div class="field"><label for="flag">Flag</label><select id="flag" name="flag"><option value="">—</option>
-    {% for k, v in [("installed", "Installed"), ("live", "Live"), ("issues", "Has issues"), ("down", "Down"), ("not_monitored", "Not monitored"), ("untagged", "Not tagged"), ("no_custody", "Custody pending"), ("pending_golive", "Awaiting go-live"), ("pci", "PCI DSS in scope")] %}
+    {% for k, v in [("installed", "Installed"), ("live", "Live"), ("issues", "Has issues"), ("down", "Down"), ("not_monitored", "Not monitored"), ("store", "Central store (unassigned)"), ("not_installed", "At branch, not installed"), ("untagged", "Not tagged"), ("no_custody", "Custody pending"), ("pending_golive", "Awaiting go-live"), ("pci", "PCI DSS in scope")] %}
     <option value="{{ k }}" {{ "selected" if params.get("flag") == k }}>{{ v }}</option>{% endfor %}</select></div>
   <button class="btn" type="submit">Filter</button> <a class="btn-link" href="/assets">Reset</a>
 </form>

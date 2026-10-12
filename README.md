@@ -102,7 +102,7 @@ Environment variables (prefix `ITAM_`):
 | `DATABASE_URL` | `sqlite:///./itam.db` | SQLAlchemy URL. Use PostgreSQL in production. A plain `DATABASE_URL` (e.g. Render's `postgres://…`) is also accepted |
 | `DEMO_SEED` / `DEMO_PASSWORD` | `false` / `ChangeMe!2026` | Load demo data on first start into an empty database; password for the demo users |
 | `SECRET_KEY` | random per process | Session signing key. **Set it**, or sessions reset on restart |
-| `COUNTRY_CODE` / `BANK_NAME` | `KE` / `The Bank` | CC part of asset numbers; branding |
+| `COUNTRY_CODE` / `BANK_NAME` / `CURRENCY` | `KE` / `The Bank` / `USD` | CC part of asset numbers; branding; currency shown for asset values |
 | `MFA_REQUIRED_ROLES` | — | e.g. `ADMIN,CIO,CFO,CISO,IT_ASSET_MANAGER` |
 | `SECURE_COOKIES` | `false` | Set `true` behind TLS |
 | `MISSING_AFTER_HOURS` / `REMOVAL_ALERT_MINUTES` | 72 / 15 | Slide 18 / 20 thresholds |
