@@ -34,6 +34,7 @@ from itam.models import (
     Branch,
     Collector,
     Contract,
+    JobRun,
     Location,
     Milestone,
     Region,
@@ -51,6 +52,9 @@ from itam.services import monitoring as mon_svc
 from itam.services import requests as req_svc
 
 DEMO_PASSWORD = os.environ.get("ITAM_DEMO_PASSWORD") or "ChangeMe!2026"
+# Bump when the demo dataset changes; a demo database tagged with an older version is replaced on start-up.
+DEMO_DATA_VERSION = "cameroon-250-v1"
+DEMO_MARKER = "demo_dataset"
 
 # Cameroon: the 10 regions. (code, name, regional capital lat, lon, rollout wave, spread in degrees)
 REGIONS = [
@@ -477,5 +481,7 @@ def seed(db: Session, small: bool = False) -> dict:
                          budget_planned=planned_budget * FX,
                          budget_actual=actual_budget * FX if actual_budget is not None else None))
 
-    auditlog.record(db, admin, "system.seed", "system", None, branches=len(branches), assets=created)
+    db.merge(JobRun(name=DEMO_MARKER, last_run_at=now, last_result=DEMO_DATA_VERSION))
+    auditlog.record(db, admin, "system.seed", "system", None, branches=len(branches), assets=created,
+                    dataset=DEMO_DATA_VERSION)
     return {"branches": len(branches), "assets": created, "users": len(db.execute(select(User)).scalars().all())}

@@ -64,6 +64,8 @@ The repo includes a `render.yaml` Blueprint that creates the web app and a Postg
 2. When asked for `ITAM_DEMO_PASSWORD`, enter the password every demo user will share. If you leave it empty,
    the default `ChangeMe!2026` is used, which is public in this README.
 3. Apply. On first start the app loads the demo data (`ITAM_DEMO_SEED=true`); restarts don't reload it.
+   When a new version of the demo dataset ships (e.g. the switch to Cameroon), an older demo database is
+   replaced automatically on the next deploy. A database holding real (non-demo) data is never touched.
    The public URL is shown on the service page.
 
 Free Render instances sleep when idle, so the first request after a pause takes about a minute. The free

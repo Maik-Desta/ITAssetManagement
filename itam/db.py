@@ -83,3 +83,18 @@ def get_db() -> Iterator[Session]:
         raise
     finally:
         session.close()
+
+
+def drop_all_tables() -> None:
+    """Remove every application table (used only to replace an outdated demo dataset)."""
+    from itam import models  # noqa: F401
+
+    engine = get_engine()
+    with engine.begin() as conn:
+        if engine.dialect.name == "sqlite":
+            conn.exec_driver_sql("PRAGMA foreign_keys=OFF")
+        for table in reversed(Base.metadata.sorted_tables):
+            cascade = " CASCADE" if engine.dialect.name == "postgresql" else ""
+            conn.exec_driver_sql(f'DROP TABLE IF EXISTS "{table.name}"{cascade}')
+        if engine.dialect.name == "sqlite":
+            conn.exec_driver_sql("PRAGMA foreign_keys=ON")

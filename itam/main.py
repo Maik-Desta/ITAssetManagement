@@ -38,17 +38,45 @@ def _back(request: Request) -> str:
     return ref if ref.startswith("/") and not ref.startswith("//") else "/dashboard"
 
 
-def _seed_if_empty() -> None:
+def demo_data_status() -> str:
+    """'empty', 'current', 'outdated' (an older demo dataset) or 'foreign' (data that is not demo data)."""
     from sqlalchemy import select
 
     from itam.db import session_scope
-    from itam.models import Region
-    from itam.seed import seed
+    from itam.models import Branch, JobRun, Region
+    from itam.seed import DEMO_DATA_VERSION, DEMO_MARKER
 
     with session_scope() as db:
         if db.execute(select(Region.id)).first() is None:
-            result = seed(db)
-            log.warning("Demo data loaded: %s", result)
+            return "empty"
+        marker = db.get(JobRun, DEMO_MARKER)
+        if marker is not None:
+            return "current" if marker.last_result == DEMO_DATA_VERSION else "outdated"
+        # First demo release (Kenya, untagged): recognisable by its Nairobi region and head-office name.
+        legacy = db.execute(select(Branch.id).where(Branch.code == "0001",
+                                                    Branch.name == "Head Office & Central Store")).first()
+        nairobi = db.execute(select(Region.id).where(Region.code == "NRB")).first()
+        return "outdated" if legacy and nairobi else "foreign"
+
+
+def prepare_demo_data() -> str:
+    """Load the demo dataset into an empty database, or replace an outdated demo dataset. Never touches real data."""
+    from itam.db import drop_all_tables, session_scope
+    from itam.seed import DEMO_DATA_VERSION, seed
+
+    status = demo_data_status()
+    if status in ("current", "foreign"):
+        if status == "foreign":
+            log.warning("ITAM_DEMO_SEED is on but the database holds non-demo data; leaving it untouched.")
+        return status
+    if status == "outdated":
+        log.warning("Replacing outdated demo dataset with %s", DEMO_DATA_VERSION)
+        drop_all_tables()
+        create_schema()
+    with session_scope() as db:
+        result = seed(db)
+    log.warning("Demo data loaded (%s): %s", DEMO_DATA_VERSION, result)
+    return "replaced" if status == "outdated" else "loaded"
 
 
 def create_app(cfg: Settings | None = None, start_scheduler: bool | None = None) -> FastAPI:
@@ -56,7 +84,7 @@ def create_app(cfg: Settings | None = None, start_scheduler: bool | None = None)
     init_engine(cfg.database_url)
     create_schema()
     if cfg.demo_seed:
-        _seed_if_empty()
+        prepare_demo_data()
 
     run_scheduler = cfg.scheduler_enabled if start_scheduler is None else start_scheduler
 
