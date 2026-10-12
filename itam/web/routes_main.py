@@ -45,9 +45,9 @@ def home():
 
 
 @router.get("/dashboard")
-def dashboard(request: Request, db: DB, user: CurrentUser):
+def dashboard(request: Request, db: DB, user: CurrentUser, region: str = ""):
     summary = dash_svc.executive_summary(db, user)
-    return render(request, "dashboard.html", user, s=summary)
+    return render(request, "dashboard.html", user, s=summary, region=region)
 
 
 # --- NOC console ---------------------------------------------------------------

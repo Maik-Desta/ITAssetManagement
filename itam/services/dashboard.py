@@ -162,7 +162,9 @@ def executive_summary(db: Session, user: User) -> dict:
     collectors = db.execute(select(Collector).where(Collector.is_active.is_(True)).order_by(Collector.name)).scalars().all()
 
     league = league_table(db, branches)
+    breakdown = asset_breakdown(db, branches)
     return {
+        "breakdown": breakdown,
         "branches": branches,
         "branch_states": states,
         "branches_total": len(branches),
@@ -266,3 +268,73 @@ def kpis(db: Session) -> list[dict]:
             None if on_time_pct is None else (on_time_pct >= 90 and (variance is None or variance < 10)),
             "Steering Committee"),
     ]
+
+
+# ---------------------------------------------------------------------------
+# Asset status breakdown per region / per branch
+# ---------------------------------------------------------------------------
+
+BREAKDOWN_COLUMNS = [
+    # key, label, asset-list flag (for click-through), help text
+    ("total", "Total assets", "", "All registered assets, excluding disposed"),
+    ("installed", "Installed", "installed", "In service at the branch (active or faulty)"),
+    ("live", "Live", "live", "Installed, in service and with no fault or alarm"),
+    ("issues", "Has issues", "issues", "Faulty, degraded, missing or under repair"),
+    ("down", "Down", "down", "Monitored and currently not responding"),
+    ("not_monitored", "Not monitored", "not_monitored", "Installed but not covered by monitoring"),
+]
+
+
+def classify_asset(status: str, oper_state: str, monitored: bool) -> set[str]:
+    """Which breakdown buckets an asset falls into (an asset can be in several)."""
+    if status == AssetStatus.DISPOSED.value:
+        return set()
+    buckets = {"total"}
+    installed = status in INSTALLED
+    if installed:
+        buckets.add("installed")
+        if not monitored:
+            buckets.add("not_monitored")
+    if monitored and installed and oper_state == OperState.DOWN.value:
+        buckets.add("down")
+    if (status in (AssetStatus.FAULTY.value, AssetStatus.MISSING.value, AssetStatus.UNDER_REPAIR.value)
+            or (installed and monitored and oper_state in (OperState.DOWN.value, OperState.DEGRADED.value))):
+        buckets.add("issues")
+    elif status == AssetStatus.ACTIVE.value:
+        buckets.add("live")
+    return buckets
+
+
+def asset_breakdown(db: Session, branches: list[Branch]) -> dict:
+    """Counts per branch and per region for the dashboard table."""
+    ids = [b.id for b in branches]
+    keys = [c[0] for c in BREAKDOWN_COLUMNS]
+    empty = lambda: dict.fromkeys(keys, 0)  # noqa: E731
+    per_branch = {bid: empty() for bid in ids}
+    if ids:
+        rows = db.execute(select(Asset.branch_id, Asset.status, Asset.oper_state, Asset.monitored, func.count(Asset.id))
+                          .where(Asset.branch_id.in_(ids))
+                          .group_by(Asset.branch_id, Asset.status, Asset.oper_state, Asset.monitored)).all()
+        for bid, status, oper, monitored, n in rows:
+            for bucket in classify_asset(status, oper, bool(monitored)):
+                per_branch[bid][bucket] += n
+    states = branch_states(db, branches)
+    regions: dict[int, dict] = {}
+    for b in branches:
+        r = regions.setdefault(b.region_id, {"region": b.region, "branches": 0, "monitored": 0, "online": 0,
+                                             "counts": empty()})
+        r["branches"] += 1
+        if states.get(b.id) != "not_monitored":
+            r["monitored"] += 1
+        if states.get(b.id) in ("online", "degraded"):
+            r["online"] += 1
+        for k in keys:
+            r["counts"][k] += per_branch[b.id][k]
+    totals = {"branches": len(branches), "monitored": sum(r["monitored"] for r in regions.values()),
+              "online": sum(r["online"] for r in regions.values()), "counts": empty()}
+    for r in regions.values():
+        for k in keys:
+            totals["counts"][k] += r["counts"][k]
+    branch_rows = [{"branch": b, "state": states.get(b.id), "counts": per_branch[b.id]} for b in branches]
+    return {"columns": BREAKDOWN_COLUMNS, "regions": sorted(regions.values(), key=lambda r: r["region"].code),
+            "branches": branch_rows, "totals": totals}

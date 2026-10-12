@@ -8,18 +8,74 @@
   <div class="actions"><a class="btn" href="/kpis">Programme KPIs</a><a class="btn" href="/noc">NOC console</a></div>
 </div>
 
+{% set bd = s.breakdown %}{% set tc = bd.totals.counts %}
 <div class="tiles">
-  <a class="tile hero" href="/branches">
-    <div class="label">Branches online</div>
-    <div class="value">{{ s.branches_online }} <small>/ {{ s.branches_monitored }}</small></div>
-    <div class="sub">monitored · {{ s.branches_total - s.branches_monitored }} not yet onboarded</div>
+  <a class="tile" href="/branches">
+    <div class="label">Total branches</div>
+    <div class="value">{{ bd.totals.branches }}</div>
+    <div class="sub">in {{ bd.regions | length }} region{{ "s" if bd.regions | length != 1 }}</div>
   </a>
-  <a class="tile" href="/assets"><div class="label">Assets registered</div><div class="value">{{ "{:,}".format(s.assets_registered) }}</div><div class="sub">excluding disposed</div></a>
+  <a class="tile" href="/branches">
+    <div class="label">Branches active &amp; monitored</div>
+    <div class="value">{{ bd.totals.monitored }} <small>/ {{ bd.totals.branches }}</small></div>
+    <div class="sub">{{ bd.totals.online }} online now · {{ bd.totals.branches - bd.totals.monitored }} not yet onboarded</div>
+  </a>
+  <a class="tile" href="/assets"><div class="label">Assets registered</div><div class="value">{{ "{:,}".format(tc.total) }}</div><div class="sub">excluding disposed</div></a>
+  <a class="tile" href="/assets?flag=installed"><div class="label">Assets installed</div><div class="value">{{ "{:,}".format(tc.installed) }}</div><div class="sub">in service at branches (active or faulty)</div></a>
+  <a class="tile" href="/assets?flag=live"><div class="label">Assets live</div><div class="value">{{ "{:,}".format(tc.live) }}</div><div class="sub">installed and working with no issues</div></a>
+  <a class="tile" href="/assets?flag=issues"><div class="label">Assets with issues</div><div class="value">{{ tc.issues }}</div><div class="sub">{{ tc.down }} down · faulty, degraded, missing or in repair</div></a>
+  <a class="tile" href="/assets?flag=not_monitored"><div class="label">Installed, not monitored</div><div class="value">{{ tc.not_monitored }}</div><div class="sub">e.g. desktops without an agent</div></a>
   <div class="tile"><div class="label">Healthy assets</div><div class="value">{{ s.healthy_pct if s.healthy_pct is not none else "—" }}<small>%</small></div><div class="sub">of {{ s.installed_monitored }} installed &amp; monitored</div></div>
   <a class="tile" href="/exceptions?type=ROGUE_DEVICE"><div class="label">Missing / rogue</div><div class="value">{{ s.missing }} <small>/ {{ s.rogue }}</small></div><div class="sub">target 0 unexplained removals</div></a>
-  <a class="tile" href="/noc"><div class="label">Open P1 / P2</div><div class="value">{{ s.open_p1 }} <small>/ {{ s.open_p2 }}</small></div><div class="sub">alerts not yet resolved</div></a>
-  <div class="tile"><div class="label">Unapproved changes</div><div class="value">{{ s.unapproved_changes }}</div><div class="sub">last 30 days</div></div>
+  <a class="tile" href="/noc"><div class="label">Open P1 / P2</div><div class="value">{{ s.open_p1 }} <small>/ {{ s.open_p2 }}</small></div><div class="sub">{{ s.unapproved_changes }} unapproved changes (30 d)</div></a>
 </div>
+
+<section class="card">
+  <h2>Assets by region</h2>
+  <p class="muted small">Click any number to open the matching assets.
+    {% for key, label, flag, help in bd.columns %}<strong>{{ label }}</strong>: {{ help | lower }}{{ "; " if not loop.last else "." }} {% endfor %}</p>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Region</th><th class="num">Branches</th><th class="num">Monitored</th><th class="num">Online</th>
+      {% for key, label, flag, help in bd.columns %}<th class="num" title="{{ help }}">{{ label }}</th>{% endfor %}</tr></thead>
+    <tbody>
+    {% for r in bd.regions %}
+      <tr><td><a href="/branches?region={{ r.region.code }}">{{ r.region.code }} · {{ r.region.name }}</a></td>
+        <td class="num">{{ r.branches }}</td><td class="num">{{ r.monitored }}</td><td class="num">{{ r.online }}</td>
+        {% for key, label, flag, help in bd.columns %}{% set n = r.counts[key] %}
+        <td class="num {{ 'fail' if key in ('issues', 'down') and n }}"><a href="/assets?region={{ r.region.code }}&flag={{ flag }}">{{ "{:,}".format(n) }}</a></td>{% endfor %}</tr>
+    {% endfor %}
+    </tbody>
+    <tfoot><tr class="total-row"><td>All regions</td><td class="num">{{ bd.totals.branches }}</td><td class="num">{{ bd.totals.monitored }}</td><td class="num">{{ bd.totals.online }}</td>
+      {% for key, label, flag, help in bd.columns %}<td class="num"><a href="/assets?flag={{ flag }}">{{ "{:,}".format(tc[key]) }}</a></td>{% endfor %}</tr></tfoot>
+  </table></div>
+</section>
+
+<section class="card" id="by-branch">
+  <div class="page-head">
+    <div><h2>Assets by branch</h2>
+      {% set empty_branches = bd.branches | selectattr("counts.total", "equalto", 0) | list %}
+      <p class="muted small">Branches with problems are listed first.{% if empty_branches %} {{ empty_branches | length }} branch(es) have no registered assets yet (not onboarded) and are hidden.{% endif %}</p></div>
+    <form method="get" action="/dashboard#by-branch" class="actions">
+      <label for="region" class="sr-only">Region</label>
+      <select id="region" name="region" data-autosubmit aria-label="Region">
+        <option value="">All regions</option>
+        {% for r in bd.regions %}<option value="{{ r.region.code }}" {{ "selected" if region == r.region.code }}>{{ r.region.code }} · {{ r.region.name }}</option>{% endfor %}
+      </select>
+    </form>
+  </div>
+  <div class="table-wrap table-scroll"><table>
+    <thead><tr><th>Branch</th><th>Region</th><th>Status</th>
+      {% for key, label, flag, help in bd.columns %}<th class="num" title="{{ help }}">{{ label }}</th>{% endfor %}</tr></thead>
+    <tbody>
+    {% for row in bd.branches | rejectattr("counts.total", "equalto", 0) | sort(attribute="branch.code") | sort(attribute="counts.issues", reverse=True) if not region or row.branch.region.code == region %}
+      <tr><td><a href="/branches/{{ row.branch.id }}">{{ row.branch.code }} {{ row.branch.name }}</a></td>
+        <td>{{ row.branch.region.code }}</td><td>{{ branch_state(row.state) }}</td>
+        {% for key, label, flag, help in bd.columns %}{% set n = row.counts[key] %}
+        <td class="num {{ 'fail' if key in ('issues', 'down') and n }}">{% if n %}<a href="/assets?branch={{ row.branch.code }}&flag={{ flag }}">{{ n }}</a>{% else %}<span class="muted">0</span>{% endif %}</td>{% endfor %}</tr>
+    {% else %}<tr><td colspan="9" class="muted">No branches with registered assets.</td></tr>{% endfor %}
+    </tbody>
+  </table></div>
+</section>
 
 <div class="grid grid-main">
   <section class="card">

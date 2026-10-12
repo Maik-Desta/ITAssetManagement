@@ -44,6 +44,7 @@ from itam.web.deps import (
 )
 
 router = APIRouter(dependencies=[Depends(csrf_protect)])
+INSTALLED = [AssetStatus.ACTIVE.value, AssetStatus.FAULTY.value]
 PAGE_SIZE = 50
 
 
@@ -78,6 +79,19 @@ def _filtered(db, user, params: dict):
         q = q.where(Asset.custody_accepted_at.is_(None), Asset.status.in_(["ACTIVE", "FAULTY"]))
     elif params.get("flag") == "pci":
         q = q.where(Asset.pci_scope.is_(True))
+    elif params.get("flag") == "installed":
+        q = q.where(Asset.status.in_(INSTALLED))
+    elif params.get("flag") == "live":
+        q = q.where(Asset.status == AssetStatus.ACTIVE.value,
+                    ~(Asset.monitored.is_(True) & Asset.oper_state.in_(["DOWN", "DEGRADED"])))
+    elif params.get("flag") == "issues":
+        q = q.where(Asset.status.in_(["FAULTY", "MISSING", "UNDER_REPAIR"])
+                    | (Asset.status.in_(INSTALLED) & Asset.monitored.is_(True)
+                       & Asset.oper_state.in_(["DOWN", "DEGRADED"])))
+    elif params.get("flag") == "down":
+        q = q.where(Asset.status.in_(INSTALLED), Asset.monitored.is_(True), Asset.oper_state == "DOWN")
+    elif params.get("flag") == "not_monitored":
+        q = q.where(Asset.status.in_(INSTALLED), Asset.monitored.is_(False))
     elif params.get("flag") == "pending_golive":
         q = q.where(Asset.status == AssetStatus.IN_STOCK.value, Asset.install_date.is_not(None))
     return q.order_by(Asset.asset_number)
