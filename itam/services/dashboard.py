@@ -461,7 +461,7 @@ def asset_inventory(db: Session, branches: list[Branch]) -> dict:
 
 
 def key_messages(summary: dict, inv: dict) -> list[dict]:
-    """Plain-language headlines for the CEO and Board, generated from live data."""
+    """Plain-language headlines for the CEO, generated from live data."""
     bd = summary["breakdown"]
     tot = bd["totals"]
     c = tot["counts"]

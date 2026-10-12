@@ -42,9 +42,9 @@
 {# ---------------- Key messages + deployment pipeline ---------------- #}
 <div class="stack">
   <section class="card">
-    <h2>Key messages for the Board</h2>
+    <h2>Key messages for the CEO</h2>
     <ul class="messages two-col">
-      {% for m in messages_board %}
+      {% for m in messages_ceo %}
       <li class="msg tone-{{ m.tone }}"><span class="dot {{ {'good': 'good', 'warning': 'warning', 'critical': 'critical'}.get(m.tone, 'info') }}"></span>
         <span><strong class="sr-only">{{ m.tone }}: </strong>{{ m.text }}</span></li>
       {% endfor %}

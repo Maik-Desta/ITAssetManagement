@@ -80,7 +80,7 @@ def test_inventory_store_and_not_installed(client, db, world):
     assert {t["type"]: t["total"] for t in inv["types"]}["RTR"] == 3
     login(client, "cio")
     html = client.get("/dashboard").text
-    for text in ("Key messages for the Board", "Deployment pipeline", "Assets by type", "Asset type by region",
+    for text in ("Key messages for the CEO", "Deployment pipeline", "Assets by type", "Asset type by region",
                  "Purchased, not yet assigned to a branch", "Delivered to branches, not yet installed"):
         assert text in html
     assert "1 matching records" in client.get("/assets?flag=store").text
