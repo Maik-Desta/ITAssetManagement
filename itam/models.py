@@ -438,12 +438,36 @@ class Alert(Base):
     branch: Mapped[Branch | None] = relationship()
     acknowledged_by: Mapped[User | None] = relationship(foreign_keys=[acknowledged_by_id])
     resolved_by: Mapped[User | None] = relationship(foreign_keys=[resolved_by_id])
+    escalations: Mapped[list[AlertEscalation]] = relationship(back_populates="alert", order_by="AlertEscalation.id")
+
+    @property
+    def impact(self) -> str:
+        from itam.enums import IMPACT_LABELS, Severity
+
+        return IMPACT_LABELS[Severity(self.severity)]
 
     @property
     def response_due_at(self) -> datetime:
         from itam.enums import RESPONSE_MINUTES, Severity
 
         return self.detected_at + timedelta(minutes=RESPONSE_MINUTES[Severity(self.severity)])
+
+
+class AlertEscalation(Base):
+    """One step on an alert's escalation path: who was told, how, and why (L1, L2, L3, CEO)."""
+
+    __tablename__ = "alert_escalations"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    alert_id: Mapped[int] = mapped_column(ForeignKey("alerts.id"), index=True)
+    level: Mapped[int] = mapped_column(Integer)  # 0=L1, 1=L2, 2=L3, 3=CEO
+    at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    reason: Mapped[str] = mapped_column(String(160))
+    recipients: Mapped[list] = mapped_column(JSON, default=list)  # full names
+    channels: Mapped[list] = mapped_column(JSON, default=list)
+    notifications_sent: Mapped[int] = mapped_column(Integer, default=0)
+
+    alert: Mapped[Alert] = relationship(back_populates="escalations")
 
 
 # ---------------------------------------------------------------------------

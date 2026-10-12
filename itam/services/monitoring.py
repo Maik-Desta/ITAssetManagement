@@ -23,26 +23,32 @@ from itam.enums import (
     OperState,
     Severity,
 )
-from itam.models import Alert, Asset, Branch, Collector, MonitoringEvent, User, utcnow
-from itam.notifications import notify_roles
+from itam.models import Alert, AlertEscalation, Asset, Branch, Collector, MonitoringEvent, User, utcnow
+from itam.notifications import notify
 from itam.rbac import Role, can
 from itam.services import PermissionDenied, ServiceError
 from itam.services.assets import set_status
 
-# Unacknowledged alerts escalate: engineer → regional lead → Head of Infrastructure → CIO.
-ESCALATION_CHAIN: list[list[Role]] = [
-    [Role.NOC, Role.REGIONAL_IT],
-    [Role.REGIONAL_LEAD],
-    [Role.HEAD_INFRA],
-    [Role.CIO],
+# Escalation path for unacknowledged alerts (slide 21, extended to the CEO for business-critical outages).
+ESCALATION_LEVELS = [
+    {"code": "L1", "name": "NOC & regional engineer", "roles": [Role.NOC, Role.REGIONAL_IT]},
+    {"code": "L2", "name": "Regional IT lead", "roles": [Role.REGIONAL_LEAD]},
+    {"code": "L3", "name": "Head of Infrastructure & CIO", "roles": [Role.HEAD_INFRA, Role.CIO]},
+    {"code": "CEO", "name": "Chief Executive", "roles": [Role.EXECUTIVE]},
 ]
+ESCALATION_CHAIN: list[list[Role]] = [lvl["roles"] for lvl in ESCALATION_LEVELS]
+CEO_LEVEL = 3
+# Highest level an unacknowledged alert can reach, by severity (keeps the CEO out of minor noise).
+MAX_ESCALATION = {Severity.P1: 3, Severity.P2: 2, Severity.P3: 1, Severity.P4: 0}
 
+C = NotificationChannel
 SEVERITY_CHANNELS = {
-    Severity.P1: [NotificationChannel.SMS, NotificationChannel.VOICE, NotificationChannel.EMAIL, NotificationChannel.CHAT],
-    Severity.P2: [NotificationChannel.SMS, NotificationChannel.EMAIL, NotificationChannel.CHAT],
-    Severity.P3: [NotificationChannel.EMAIL],  # ticket
+    Severity.P1: [C.VOICE, C.SMS, C.EMAIL, C.CHAT, C.SYSTEM],  # immediate call + SMS
+    Severity.P2: [C.SMS, C.EMAIL, C.CHAT, C.SYSTEM],
+    Severity.P3: [C.EMAIL, C.SYSTEM],  # ticket
     Severity.P4: [],  # report, next business day
 }
+CEO_CHANNELS = [C.VOICE, C.SMS, C.EMAIL, C.SYSTEM]
 
 # Extra audiences by category (slide 20: missing alert to NOC, Security and Branch Manager).
 CATEGORY_AUDIENCE: dict[AlertCategory, list[Role]] = {
@@ -121,8 +127,13 @@ def raise_alert(db: Session, *, dedup_key: str, severity: Severity, category: Al
     channels = SEVERITY_CHANNELS[severity]
     if channels:
         where = f"{branch.code} {branch.name}" if branch else "estate"
-        notify_roles(db, roles, f"[{severity.value}] {title}", f"{where}\n{detail or ''}\nTicket: {alert.ticket_ref}",
-                     channels, branch=branch, alert_id=alert.id)
+        record_escalation(db, alert, 0, "Alert raised", roles, channels,
+                          f"[{severity.value}] {title}", f"{where}\n{detail or ''}\nTicket: {alert.ticket_ref}")
+    if category == AlertCategory.BRANCH_OFFLINE and branch is not None:
+        # A branch completely offline is business-critical: the CEO is told immediately, not after escalation.
+        record_escalation(db, alert, CEO_LEVEL, "Branch completely offline — immediate CEO alert", ESCALATION_CHAIN[CEO_LEVEL],
+                          CEO_CHANNELS, f"CRITICAL: {branch.code} {branch.name} is completely offline",
+                          f"All WAN links to {branch.name} are down. NOC is responding. Ticket {alert.ticket_ref}.")
     auditlog.record(db, None, "alert.raise", "alert", alert.id, severity=severity.value, category=category.value,
                     title=title, asset=asset.asset_number if asset else None, branch=branch.code if branch else None)
     return alert
@@ -191,27 +202,78 @@ def report_user_incident(db: Session, actor: User, branch: Branch, description: 
     return alert
 
 
+def record_escalation(db: Session, alert: Alert, level: int, reason: str, roles: list[Role],
+                      channels: list[NotificationChannel], subject: str, body: str) -> AlertEscalation:
+    from itam.notifications import users_with_role
+
+    users: dict[int, User] = {}
+    for role in roles:
+        for u in users_with_role(db, role, alert.branch):
+            users[u.id] = u
+    sent = notify(db, users.values(), subject, body, channels, alert_id=alert.id)
+    step = AlertEscalation(level=level, at=utcnow(), reason=reason[:160],
+                           recipients=sorted(u.full_name for u in users.values()),
+                           channels=[c.value for c in channels], notifications_sent=len(sent))
+    alert.escalations.append(step)
+    db.flush()
+    return step
+
+
+def ceo_informed(alert: Alert) -> bool:
+    return any(e.level == CEO_LEVEL for e in alert.escalations)
+
+
 def escalate_overdue(db: Session, now: datetime | None = None) -> int:
-    """Escalate unacknowledged alerts one level per elapsed response target."""
+    """Escalate unacknowledged alerts one level per elapsed response target, up to the severity's ceiling."""
     now = now or utcnow()
     count = 0
     alerts = db.execute(select(Alert).where(Alert.status == AlertStatus.OPEN.value)).scalars().all()
     for alert in alerts:
-        target = timedelta(minutes=RESPONSE_MINUTES[Severity(alert.severity)])
-        due_level = min(int((now - alert.detected_at) / target), len(ESCALATION_CHAIN) - 1)
+        sev = Severity(alert.severity)
+        target = timedelta(minutes=RESPONSE_MINUTES[sev])
+        due_level = min(int((now - alert.detected_at) / target), MAX_ESCALATION[sev])
         if due_level <= alert.escalation_level:
             continue
+        for level in range(alert.escalation_level + 1, due_level + 1):
+            if level == CEO_LEVEL and ceo_informed(alert):
+                continue
+            lvl = ESCALATION_LEVELS[level]
+            minutes = int((now - alert.detected_at).total_seconds() // 60)
+            record_escalation(db, alert, level, f"Not acknowledged within {minutes} min", lvl["roles"],
+                              SEVERITY_CHANNELS[sev] or [C.EMAIL, C.SYSTEM],
+                              f"ESCALATION {lvl['code']} [{alert.severity}] {alert.title}",
+                              f"Unacknowledged for {minutes} min. Ticket {alert.ticket_ref}")
+            auditlog.record(db, None, "alert.escalate", "alert", alert.id, level=lvl["code"],
+                            roles=[r.value for r in lvl["roles"]])
         alert.escalation_level = due_level
         alert.last_escalated_at = now
-        roles = ESCALATION_CHAIN[due_level]
-        channels = SEVERITY_CHANNELS[Severity(alert.severity)] or [NotificationChannel.EMAIL]
-        notify_roles(db, roles, f"ESCALATION L{due_level} [{alert.severity}] {alert.title}",
-                     f"Unacknowledged for {int((now - alert.detected_at).total_seconds() // 60)} min. Ticket {alert.ticket_ref}",
-                     channels, branch=alert.branch, alert_id=alert.id)
-        auditlog.record(db, None, "alert.escalate", "alert", alert.id, level=due_level,
-                        roles=[r.value for r in roles])
         count += 1
     return count
+
+
+def escalation_path(alert: Alert, now: datetime | None = None) -> list[dict]:
+    """L1 → L2 → L3 → CEO with the state of each step: done, due (time), skipped or not applicable."""
+    now = now or utcnow()
+    sev = Severity(alert.severity)
+    target = timedelta(minutes=RESPONSE_MINUTES[sev])
+    done = {}
+    for e in alert.escalations:
+        done.setdefault(e.level, e)
+    steps = []
+    for level, lvl in enumerate(ESCALATION_LEVELS):
+        e = done.get(level)
+        due_at = alert.detected_at + target * level
+        if e:
+            state = "done"
+        elif level > MAX_ESCALATION[sev] or (level > 0 and not SEVERITY_CHANNELS[sev]):
+            state = "na"
+        elif alert.acknowledged_at or alert.status == AlertStatus.RESOLVED.value:
+            state = "stopped"
+        else:
+            state = "due" if due_at > now else "overdue"
+        steps.append({"level": level, "code": lvl["code"], "name": lvl["name"], "state": state, "escalation": e,
+                      "due_at": due_at})
+    return steps
 
 
 # ---------------------------------------------------------------------------

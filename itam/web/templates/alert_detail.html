@@ -1,15 +1,35 @@
 {% extends "base.html" %}
-{% from "macros.html" import sev, csrf, status_badge with context %}
+{% from "macros.html" import sev, csrf, status_badge, impact_badge, escalation_stepper, channel_chips with context %}
 {% block title %}Alert {{ alert.ticket_ref or alert.id }}{% endblock %}
 {% block content %}
 <div class="page-head">
-  <div><h1>{{ sev(alert.severity) }} {{ alert.title }}</h1><p>{{ alert.ticket_ref or "No ticket" }} · {{ alert.category.replace("_", " ").title() }} · {{ alert.status.title() }}</p></div>
+  <div><h1>{{ alert.title }}</h1><p>{{ impact_badge(alert.severity) }} {{ sev(alert.severity) }} · {{ alert.ticket_ref or "No ticket" }} · {{ alert.category.replace("_", " ").title() }} · {{ alert.status.title() }}</p></div>
   <div class="actions">
     {% if alert.status == "OPEN" and can(user, "alert.respond") %}
     <form method="post" action="/alerts/{{ alert.id }}/ack">{{ csrf() }}<input type="hidden" name="next" value="/alerts/{{ alert.id }}"><button class="btn primary" type="submit">Acknowledge</button></form>
     {% endif %}
   </div>
 </div>
+<section class="card">
+  <h2>Escalation path</h2>
+  {{ escalation_stepper(esc_path) }}
+  <div class="inc-label">Notification methods used</div>
+  {{ channel_chips(channels) }}
+  <h3>Escalation log</h3>
+  <table><thead><tr><th>Level</th><th>When (UTC)</th><th>Why</th><th>Who was notified</th><th>How</th></tr></thead><tbody>
+  {% for e in alert.escalations %}
+    <tr><td><strong>{{ ["L1", "L2", "L3", "CEO"][e.level] }}</strong></td><td class="nowrap">{{ e.at | dt }}</td><td>{{ e.reason }}</td>
+      <td class="small">{{ e.recipients | join(", ") or "—" }}</td>
+      <td class="small">{% for c in e.channels %}{{ {"VOICE": "Call", "SMS": "SMS", "EMAIL": "Email", "SYSTEM": "In-app", "CHAT": "Teams"}[c] }}{% if not loop.last %} · {% endif %}{% endfor %}</td></tr>
+  {% else %}<tr><td colspan="5" class="muted">No escalations (informational alert).</td></tr>{% endfor %}
+  </tbody></table>
+  <details class="table-view"><summary>All {{ notifications | length }} notification messages</summary>
+    <div class="table-wrap"><table><thead><tr><th>Time</th><th>Method</th><th>Recipient</th><th>Subject</th><th>Status</th></tr></thead><tbody>
+    {% for m in notifications %}<tr><td class="nowrap">{{ m.created_at | dt("%H:%M:%S") }}</td><td>{{ {"VOICE": "Call", "SMS": "SMS", "EMAIL": "Email", "SYSTEM": "In-app", "CHAT": "Teams"}[m.channel] }}</td>
+      <td class="small">{{ m.recipient }}</td><td class="small">{{ m.subject }}</td><td class="small">{{ m.status.replace("_", " ").title() }}</td></tr>{% endfor %}
+    </tbody></table></div></details>
+</section>
+<br>
 <div class="grid grid-2">
   <section class="card">
     <h2>Details</h2>
@@ -21,7 +41,9 @@
       <dt>Detected</dt><dd>{{ alert.detected_at | dt }} UTC <span class="muted">(time to detect {{ ((alert.detected_at - alert.occurred_at).total_seconds() / 60) | duration }})</span></dd>
       <dt>Response due</dt><dd>{{ alert.response_due_at | dt }} UTC</dd>
       <dt>Acknowledged</dt><dd>{{ alert.acknowledged_at | dt }} {{ alert.acknowledged_by.full_name if alert.acknowledged_by else "" }}</dd>
-      <dt>Escalation level</dt><dd>{{ alert.escalation_level }} {{ ["(engineer)", "(regional lead)", "(Head of Infrastructure)", "(CIO)"][alert.escalation_level] }}</dd>
+      <dt>Escalation reached</dt><dd>{{ ["L1 · NOC & regional engineer", "L2 · Regional IT lead", "L3 · Head of Infrastructure & CIO", "CEO"][alert.escalation_level] }}{% if alert.escalation_level < 3 and (alert.escalations | selectattr("level", "equalto", 3) | first) %} <span class="ceo-badge">+ CEO alerted immediately</span>{% endif %}</dd>
+      <dt>Response time</dt><dd>{{ ((alert.acknowledged_at - alert.detected_at).total_seconds() / 60) | duration if alert.acknowledged_at else "awaiting response" }}</dd>
+      <dt>Resolution time</dt><dd>{{ ((alert.resolved_at - alert.occurred_at).total_seconds() / 60) | duration if alert.resolved_at else "open" }}</dd>
       <dt>Resolved</dt><dd>{{ alert.resolved_at | dt }} {{ alert.resolved_by.full_name if alert.resolved_by else "" }}</dd>
       <dt>Resolution</dt><dd>{{ alert.resolution or "—" }}</dd>
       <dt>Detail</dt><dd>{{ alert.detail or "—" }}</dd>

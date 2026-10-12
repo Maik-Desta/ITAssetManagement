@@ -49,6 +49,8 @@
         <input type="search" name="q" placeholder="Search asset no., serial, host, IP…" aria-label="Search assets">
       </form>
       <div class="actions small">
+        <a href="/notifications" class="bell {{ 'has-unread' if unread_count }}" title="In-app notifications" aria-label="{{ unread_count }} unread notifications">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 16V11a6 6 0 0112 0v5l2 2H4zM10 20h4"/></svg>{% if unread_count %}<span class="bell-n">{{ unread_count if unread_count < 100 else "99+" }}</span>{% endif %}</a>
         <a href="/account" title="Account">{{ user.full_name }}</a>
         <span class="muted role-list">{% for r in user.roles %}{{ ROLE_LABELS.get(r, r) }}{% if not loop.last %}, {% endif %}{% endfor %}</span>
         <form method="post" action="/logout" class="inline">

@@ -67,18 +67,27 @@ def _scoped_alerts(db, user, statuses, severities=None, branch_id=None):
 
 
 @router.get("/noc")
-def noc(request: Request, db: DB, user: CurrentUser, show: str = "active", sev: str = "P1,P2,P3"):
-    severities = [s for s in sev.split(",") if s in Severity._value2member_map_]
-    statuses = ([AlertStatus.OPEN.value, AlertStatus.ACKNOWLEDGED.value] if show == "active"
-                else [AlertStatus.RESOLVED.value])
-    alerts = _scoped_alerts(db, user, statuses, severities)
-    counts = dict(db.execute(select(Alert.severity, func.count(Alert.id)).where(
-        Alert.status != AlertStatus.RESOLVED.value).group_by(Alert.severity)).all())
-    branches = db.execute(scope_branches(user, select(Branch).order_by(Branch.code))).scalars().all()
-    states = dash_svc.branch_states(db, branches)
-    offline = [b for b in branches if states.get(b.id) == "offline"]
-    return render(request, "noc.html", user, alerts=alerts, show=show, sev=sev, counts=counts, branches=branches,
-                  offline=offline, now=utcnow(), refresh=60)
+def noc(request: Request, db: DB, user: CurrentUser, show: str = "live"):
+    from itam.services.noc import noc_overview
+
+    data = noc_overview(db, user)
+    history = []
+    if show == "history":
+        history = _scoped_alerts(db, user, [AlertStatus.RESOLVED.value], None)[:200]
+    return render(request, "noc.html", user, n=data, show=show, history=history, refresh=60 if show == "live" else 0)
+
+
+@router.get("/notifications")
+def my_notifications(request: Request, db: DB, user: CurrentUser):
+    from itam.models import Notification
+
+    rows = db.execute(select(Notification).where(Notification.recipient_user_id == user.id)
+                      .order_by(Notification.id.desc()).limit(200)).scalars().all()
+    unread = [n for n in rows if n.channel == "SYSTEM" and n.status == "UNREAD"]
+    page = render(request, "my_notifications.html", user, rows=rows, unread_ids={n.id for n in unread})
+    for n in unread:
+        n.status = "READ"
+    return page
 
 
 @router.get("/alerts/{alert_id}")
@@ -86,11 +95,19 @@ def alert_detail(request: Request, db: DB, user: CurrentUser, alert_id: int):
     alert = db.get(Alert, alert_id)
     if alert is None or (alert.branch and not can_see_branch(user, alert.branch)):
         raise NotFound("Alert not found")
+    from itam.models import Notification
+    from itam.services.monitoring import escalation_path
+    from itam.services.noc import notification_summary
+
+    notifications = db.execute(select(Notification).where(Notification.alert_id == alert.id)
+                               .order_by(Notification.id)).scalars().all()
     events = []
     if alert.asset_id:
         events = db.execute(select(MonitoringEvent).where(MonitoringEvent.asset_id == alert.asset_id)
                             .order_by(MonitoringEvent.occurred_at.desc()).limit(30)).scalars().all()
-    return render(request, "alert_detail.html", user, alert=alert, events=events, now=utcnow())
+    return render(request, "alert_detail.html", user, alert=alert, events=events, now=utcnow(),
+                  esc_path=escalation_path(alert), notifications=notifications,
+                  channels=notification_summary(notifications))
 
 
 @router.post("/alerts/{alert_id}/ack")

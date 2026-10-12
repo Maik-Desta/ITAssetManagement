@@ -261,8 +261,21 @@ ROLLOUT_ORDER = [RolloutStage.NOT_STARTED, RolloutStage.PREPARE, RolloutStage.ON
 class NotificationChannel(StrEnum):
     EMAIL = "EMAIL"
     SMS = "SMS"
-    VOICE = "VOICE"
-    CHAT = "CHAT"
+    VOICE = "VOICE"  # automated phone call
+    CHAT = "CHAT"  # Teams / chat
+    SYSTEM = "SYSTEM"  # in-app notification
+
+
+CHANNEL_LABELS = {
+    NotificationChannel.VOICE: "Call",
+    NotificationChannel.SMS: "SMS",
+    NotificationChannel.EMAIL: "Email",
+    NotificationChannel.CHAT: "Teams",
+    NotificationChannel.SYSTEM: "In-app",
+}
+
+# Service impact shown to the business, derived from alert severity.
+IMPACT_LABELS = {Severity.P1: "Critical", Severity.P2: "Major", Severity.P3: "Medium", Severity.P4: "Minor"}
 
 
 class NotificationStatus(StrEnum):
@@ -270,3 +283,5 @@ class NotificationStatus(StrEnum):
     SENT = "SENT"
     FAILED = "FAILED"
     OUTBOX_ONLY = "OUTBOX_ONLY"
+    UNREAD = "UNREAD"  # in-app
+    READ = "READ"  # in-app

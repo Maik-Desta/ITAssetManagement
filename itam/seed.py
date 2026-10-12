@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 from itam import auditlog
 from itam.config import settings
 from itam.enums import (
+    RESPONSE_MINUTES,
     AlertCategory,
     AlertSource,
     AlertStatus,
@@ -183,7 +184,7 @@ def seed(db: Session, small: bool = False) -> dict:
     head = _user(db, "head.infra", "Head of Infrastructure", [Role.HEAD_INFRA])
     _user(db, "ciso", "Chief Information Security Officer", [Role.CISO])
     itam = _user(db, "itam", "IT Asset Manager", [Role.IT_ASSET_MANAGER])
-    _user(db, "noc", "NOC Analyst", [Role.NOC])
+    users_by_role_noc = _user(db, "noc", "NOC Analyst", [Role.NOC])
     _user(db, "noc2", "NOC Analyst (night)", [Role.NOC])
     procurement = _user(db, "procurement", "Procurement Officer", [Role.PROCUREMENT])
     finance = _user(db, "finance", "Fixed-Asset Accountant", [Role.FINANCE])
@@ -344,9 +345,29 @@ def seed(db: Session, small: bool = False) -> dict:
     mon_svc.ingest_poll_results(db, mon, [{"asset_number": env.asset_number, "metrics": {"temperature_c": 38.5},
                                            "occurred_at": (now - timedelta(minutes=12)).isoformat()}])
 
+    # A core firewall down for over an hour with nobody responding: escalates all the way to the CEO.
+    fw_branch = [b for b in live_branches if b.region_id == regions["KSM"].id][2]
+    fw = [a for a in fw_branch.assets if a.asset_type == "FWL"][0]
+    mon_svc.apply_state(db, fw, OperState.DOWN, now - timedelta(minutes=78), collectors["KSM"], "HA heartbeat lost")
+
     # Collectors poll every minute: live alerts were detected 1-2 minutes after the failure.
     for a in db.execute(select(Alert).where(Alert.status == AlertStatus.OPEN.value)).scalars():
         a.detected_at = min(a.occurred_at + timedelta(minutes=rnd.choice([1, 2])), now)
+        for e in a.escalations:
+            e.at = a.detected_at
+    # The NOC picked up the environment alarm quickly, so it did not escalate.
+    env_alert = db.execute(select(Alert).where(Alert.category == "ENVIRONMENT")).scalars().first()
+    if env_alert:
+        mon_svc.acknowledge(db, users_by_role_noc, env_alert)
+        env_alert.acknowledged_at = env_alert.detected_at + timedelta(minutes=4)
+    # Run the escalation timer as the scheduler would have, timestamping each step when it fell due.
+    mon_svc.escalate_overdue(db, now)
+    for a in db.execute(select(Alert).where(Alert.status == AlertStatus.OPEN.value)).scalars():
+        target = timedelta(minutes=RESPONSE_MINUTES[Severity(a.severity)])
+        for e in a.escalations:
+            if e.reason.startswith("Not acknowledged"):
+                e.at = a.detected_at + target * e.level
+                e.reason = f"Not acknowledged within {int((target * e.level).total_seconds() // 60)} min"
 
     # Missing assets: not seen for 4 days, no approved change.
     for b in (nrb_live[2], nrb_live[15]):

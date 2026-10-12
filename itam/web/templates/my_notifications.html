@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}My notifications{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>My notifications</h1><p>Messages the platform sent you: in-app, e-mail, SMS, calls and Teams.</p></div></div>
+<section class="card"><div class="table-wrap"><table>
+  <thead><tr><th>When (UTC)</th><th>Method</th><th>Subject</th><th>Status</th></tr></thead>
+  <tbody>{% for m in rows %}
+  <tr class="{{ 'unread-row' if m.id in unread_ids }}"><td class="nowrap">{{ m.created_at | dt }}</td>
+    <td>{{ {"VOICE": "Call", "SMS": "SMS", "EMAIL": "Email", "SYSTEM": "In-app", "CHAT": "Teams"}[m.channel] }}</td>
+    <td>{% if m.alert_id %}<a href="/alerts/{{ m.alert_id }}">{{ m.subject }}</a>{% else %}{{ m.subject }}{% endif %}{% if m.id in unread_ids %} <span class="badge"><span class="dot info"></span>New</span>{% endif %}</td>
+    <td class="small">{{ "Delivered" if m.status in ("UNREAD", "READ", "SENT") else m.status.replace("_", " ").title() }}</td></tr>
+  {% else %}<tr><td colspan="4" class="muted">No notifications yet.</td></tr>{% endfor %}</tbody>
+</table></div></section>
+{% endblock %}

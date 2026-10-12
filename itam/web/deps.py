@@ -140,8 +140,26 @@ def require(user: User, permission: str) -> None:
         raise PermissionDenied("You do not have permission for this page or action")
 
 
+def _unread_count(user: User | None) -> int:
+    if user is None:
+        return 0
+    from sqlalchemy import func, select
+
+    from itam.db import new_session
+    from itam.models import Notification
+
+    db = new_session()
+    try:
+        return db.execute(select(func.count(Notification.id)).where(
+            Notification.recipient_user_id == user.id, Notification.channel == "SYSTEM",
+            Notification.status == "UNREAD")).scalar_one()
+    finally:
+        db.close()
+
+
 def render(request: Request, template: str, user: User | None = None, status_code: int = 200, **ctx: Any):
     messages = request.session.pop("flash", [])
+    ctx.setdefault("unread_count", _unread_count(user))
     return TEMPLATES.TemplateResponse(
         request, template,
         {"user": user, "csrf_token": csrf_token(request), "messages": messages, "path": request.url.path, **ctx},

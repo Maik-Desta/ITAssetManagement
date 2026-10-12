@@ -58,9 +58,14 @@ def notify(db: Session, recipients: Iterable[User], subject: str, body: str,
             address = user.email if channel == NotificationChannel.EMAIL else user.phone
             if channel == NotificationChannel.CHAT:
                 address = f"@{user.username}"
+            if channel == NotificationChannel.SYSTEM:
+                address = f"in-app:{user.username}"
             if not address:
                 continue
-            status = NotificationStatus.QUEUED if _channel_configured(channel) else NotificationStatus.OUTBOX_ONLY
+            if channel == NotificationChannel.SYSTEM:
+                status = NotificationStatus.UNREAD  # delivered immediately inside the platform
+            else:
+                status = NotificationStatus.QUEUED if _channel_configured(channel) else NotificationStatus.OUTBOX_ONLY
             n = Notification(channel=channel.value, recipient=address, recipient_user_id=user.id,
                              subject=subject[:255], body=body, status=status.value, alert_id=alert_id)
             db.add(n)

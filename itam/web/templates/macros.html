@@ -165,3 +165,43 @@
 <tbody>{% for r in rows %}<tr><td>{% if r.href %}<a href="{{ r.href }}">{{ r.label }}</a>{% else %}{{ r.label }}{% endif %}</td>{% for key, slabel, shelp in stages %}<td class="num">{{ "{:,}".format(r.stages[key]) }}</td>{% endfor %}<td class="num"><strong>{{ "{:,}".format(r.total) }}</strong></td></tr>{% endfor %}</tbody></table></div>
 </details>
 {%- endmacro %}
+
+{% macro impact_badge(severity) -%}
+{%- set label = {"P1": "Critical", "P2": "Major", "P3": "Medium", "P4": "Minor"}[severity] -%}
+<span class="impact impact-{{ severity }}"><span class="dot"></span>{{ label }}</span>
+{%- endmacro %}
+
+{# Escalation stepper: L1 → L2 → L3 → CEO #}
+{% macro escalation_stepper(path, compact=False) -%}
+<ol class="esc-path {{ 'compact' if compact }}" aria-label="Escalation path">
+  {% for s in path %}
+  <li class="esc-step esc-{{ s.state }} {{ 'esc-ceo' if s.code == 'CEO' }}"
+      title="{{ s.code }} · {{ s.name }}{% if s.escalation %} — notified {{ s.escalation.at | dt('%H:%M') }}: {{ s.escalation.recipients | join(', ') }}{% endif %}">
+    <span class="esc-node">{% if s.state == "done" %}✓{% elif s.state == "overdue" %}!{% else %}{{ s.code if s.code != "CEO" else "★" }}{% endif %}</span>
+    <span class="esc-text"><strong>{{ s.code }}</strong>
+      {% if not compact %}<small>{{ s.name }}</small>{% endif %}
+      <small class="esc-when">
+        {%- if s.state == "done" %}notified {{ s.escalation.at | dt("%H:%M") }}
+        {%- elif s.state == "due" %}due {{ s.due_at | dt("%H:%M") }}
+        {%- elif s.state == "overdue" %}overdue
+        {%- elif s.state == "stopped" %}not needed
+        {%- else %}n/a{% endif %}</small></span>
+  </li>
+  {% endfor %}
+</ol>
+{%- endmacro %}
+
+{% macro channel_chips(channels) -%}
+<span class="chips">{% for c in channels %}
+  <span class="chip chip-{{ c.state }}" title="{{ c.count }} {{ c.label }} message(s): {{ c.delivered }} delivered{% if c.state == 'logged' %}, held in outbox (gateway not configured){% endif %}{% if c.failed %}, {{ c.failed }} failed{% endif %}">
+    {{ channel_icon(c.channel) }}{{ c.label }}<span class="chip-mark">{{ "✓" if c.state == "sent" else ("✗" if c.state == "failed" else "•") }}</span><span class="chip-n">{{ c.count }}</span></span>
+{% else %}<span class="muted small">No notifications (P4: next-day report)</span>{% endfor %}</span>
+{% if channels %}<div class="chip-legend">✓ delivered · • logged in outbox (gateway not configured) · ✗ failed — hover a method for detail</div>{% endif %}
+{%- endmacro %}
+
+{% macro channel_icon(channel) -%}
+{%- set p = {"VOICE": "M5 4h4l2 5-2.5 1.5a11 11 0 005 5L15 13l5 2v4a2 2 0 01-2 2A16 16 0 013 6a2 2 0 012-2",
+             "SMS": "M4 5h16v11H8l-4 4z", "EMAIL": "M3 6h18v12H3zM3 7l9 6 9-6",
+             "CHAT": "M4 4h16v12H7l-3 3zM8 9h8M8 12h5", "SYSTEM": "M6 16V11a6 6 0 0112 0v5l2 2H4zM10 20h4"} -%}
+<svg class="ch-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="{{ p.get(channel, p.SYSTEM) }}"/></svg>
+{%- endmacro %}

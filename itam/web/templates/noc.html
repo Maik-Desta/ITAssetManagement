@@ -1,64 +1,196 @@
 {% extends "base.html" %}
-{% from "macros.html" import sev, csrf with context %}
+{% from "macros.html" import sev, csrf, kpi, impact_badge, escalation_stepper, channel_chips, branch_state with context %}
 {% block title %}NOC console{% endblock %}
 {% block content %}
-<div class="page-head">
-  <div><h1>NOC console</h1><p>24/7 monitoring · auto-refreshes every {{ refresh }} s · unacknowledged alerts escalate engineer → regional lead → Head of Infrastructure → CIO</p></div>
-</div>
-<div class="tiles">
-  {% for s in ["P1", "P2", "P3", "P4"] %}
-  <a class="tile" href="/noc?sev={{ s }}"><div class="label">{{ sev(s) }} {{ SEVERITY_LABELS[s] }}</div><div class="value">{{ counts.get(s, 0) }}</div>
-    <div class="sub">{{ {"P1": "SMS + call · 15-min response", "P2": "SMS + e-mail · 30-min response", "P3": "Ticket · 4-hour response", "P4": "Report · next business day"}[s] }}</div></a>
-  {% endfor %}
-</div>
-{% if offline %}
-<div class="callout danger"><strong>Branches offline:</strong>
-  {% for b in offline %}<a href="/branches/{{ b.id }}">{{ b.code }} {{ b.name }}</a>{% if not loop.last %}, {% endif %}{% endfor %}</div>
-<br>
-{% endif %}
-<div class="grid grid-main">
-<section class="card">
-  <div class="tabs">
-    <a href="/noc?show=active&sev=P1,P2,P3" class="{{ 'active' if show == 'active' and sev == 'P1,P2,P3' }}">Active P1–P3</a>
-    <a href="/noc?show=active&sev=P1,P2,P3,P4" class="{{ 'active' if show == 'active' and sev == 'P1,P2,P3,P4' }}">All active</a>
-    <a href="/noc?show=resolved&sev=P1,P2,P3,P4" class="{{ 'active' if show == 'resolved' }}">Resolved</a>
+<div class="page-head board-head">
+  <div>
+    <div class="eyebrow">Network Operations Centre · 24/7</div>
+    <h1>Service status</h1>
+    <p>{% if show == "live" %}<span class="live-dot"></span> Live · refreshes every 60 s · updated {{ n.now | dt("%H:%M:%S") }} UTC{% else %}Resolved alerts{% endif %}</p>
   </div>
-  <div class="table-wrap"><table>
-    <thead><tr><th>Sev</th><th>Alert</th><th>Branch</th><th>Detected</th><th>Response due</th><th>Esc.</th><th></th></tr></thead>
-    <tbody>
-    {% for a in alerts %}
-      {% set overdue = a.status == "OPEN" and now > a.response_due_at %}
-      <tr>
-        <td>{{ sev(a.severity) }}</td>
-        <td><a href="/alerts/{{ a.id }}">{{ a.title }}</a><div class="muted small">{{ a.ticket_ref or "" }} · {{ a.category.replace("_", " ").title() }} · {{ a.source.replace("_", " ").title() }}</div></td>
-        <td>{% if a.branch %}<a href="/branches/{{ a.branch.id }}">{{ a.branch.code }}</a>{% else %}—{% endif %}</td>
-        <td class="nowrap">{{ a.detected_at | ago }}</td>
-        <td class="nowrap">{% if a.status == "RESOLVED" %}<span class="muted">resolved {{ a.resolved_at | ago }}</span>{% elif a.status == "ACKNOWLEDGED" %}<span class="pass">✓ acknowledged</span>{% elif overdue %}<span class="fail">⚠ overdue</span>{% else %}{{ a.response_due_at | dt("%H:%M") }}{% endif %}</td>
-        <td>{{ "L" ~ a.escalation_level if a.escalation_level else "—" }}</td>
-        <td>{% if a.status == "OPEN" and can(user, "alert.respond") %}
-          <form method="post" action="/alerts/{{ a.id }}/ack" class="inline">{{ csrf() }}<input type="hidden" name="next" value="/noc?show={{ show }}&sev={{ sev }}"><button class="btn small" type="submit">Acknowledge</button></form>
-        {% endif %}</td>
-      </tr>
-    {% else %}
-      <tr><td colspan="7" class="muted">No alerts.</td></tr>
+  <div class="tabs no-print">
+    <a href="/noc" class="{{ 'active' if show == 'live' }}">Live incidents</a>
+    <a href="/noc?show=history" class="{{ 'active' if show == 'history' }}">History</a>
+  </div>
+</div>
+
+{% if show == "history" %}
+<section class="card"><div class="table-wrap"><table>
+  <thead><tr><th>Impact</th><th>Alert</th><th>Branch</th><th>Detected</th><th class="num">Response</th><th class="num">Resolution</th><th>Reached</th></tr></thead>
+  <tbody>{% for a in history %}
+  <tr><td>{{ impact_badge(a.severity) }}</td><td><a href="/alerts/{{ a.id }}">{{ a.title }}</a><div class="muted small">{{ a.ticket_ref or "" }} · {{ a.resolution or "" }}</div></td>
+    <td>{{ a.branch.code if a.branch else "—" }}</td><td class="nowrap">{{ a.detected_at | dt }}</td>
+    <td class="num">{{ ((a.acknowledged_at - a.detected_at).total_seconds() / 60) | duration if a.acknowledged_at else "—" }}</td>
+    <td class="num">{{ ((a.resolved_at - a.occurred_at).total_seconds() / 60) | duration if a.resolved_at else "—" }}</td>
+    <td>{{ ["L1", "L2", "L3", "CEO"][a.escalation_level] }}</td></tr>
+  {% else %}<tr><td colspan="7" class="muted">No resolved alerts.</td></tr>{% endfor %}</tbody></table></div></section>
+{% else %}
+
+{# ---- Branch completely offline: CEO alert banners ---- #}
+{% for g in n.offline %}{% set a = g.lead.alert %}
+<div class="outage-banner" role="alert">
+  <div class="ob-main">
+    <span class="ob-tag">Branch offline</span>
+    <strong><a href="/branches/{{ g.branch.id }}">{{ g.branch.code }} {{ g.branch.name }}</a></strong>
+    <span class="ob-meta">{{ g.branch.region.name }} · down {{ g.age_min | duration }} · {{ g.alerts | length }} alert(s) · ticket {{ a.ticket_ref }}</span>
+  </div>
+  <div class="ob-ceo">
+    {% set ceo = (a.escalations | selectattr("level", "equalto", 3) | first) %}
+    {% if ceo %}<span class="ob-ceo-tag">★ CEO alerted {{ ceo.at | dt("%H:%M") }}</span>
+      <span class="ob-meta">{% for c in ceo.channels %}{{ {"VOICE": "Call", "SMS": "SMS", "EMAIL": "Email", "SYSTEM": "In-app", "CHAT": "Teams"}[c] }}{% if not loop.last %} · {% endif %}{% endfor %} → {{ ceo.recipients | join(", ") or "no CEO user configured" }}</span>
+    {% endif %}
+  </div>
+  <a class="btn" href="/alerts/{{ a.id }}">Open incident</a>
+</div>
+{% endfor %}
+
+{# ---- Headline numbers ---- #}
+{% set ic = n.impact_counts %}
+<div class="kpi-grid kpi-grid-6">
+  {{ kpi("Critical impact", ic.P1, "branch offline / core down", "#incidents", "critical" if ic.P1 else "good", "alert") }}
+  {{ kpi("Major impact", ic.P2, "redundancy lost, server down", "#incidents", "warning" if ic.P2 else "good", "alert") }}
+  {{ kpi("Medium / minor", ic.P3 ~ " / " ~ ic.P4, "degradation · informational", "#incidents", "info", "pulse") }}
+  {{ kpi("Branches offline", n.offline | length, "CEO alerted automatically", "#incidents", "critical" if n.offline else "good", "branch") }}
+  {{ kpi("Assets down / degraded", n.asset_counts.down ~ " / " ~ n.asset_counts.degraded,
+         n.asset_counts.unreachable ~ " unreachable (branch offline)", "#affected", "critical" if n.asset_counts.down else "good", "box") }}
+  {{ kpi("Awaiting response", n.unacked, n.overdue ~ " past response target", "#incidents", "critical" if n.overdue else ("warning" if n.unacked else "good"), "clock") }}
+</div>
+<div class="kpi-grid kpi-grid-3">
+  {{ kpi("Mean response time", (n.overall.mtta | duration) if n.overall.mtta is not none else "—", "detected → acknowledged · last " ~ n.window_days ~ " days", "#performance", "info", "clock") }}
+  {{ kpi("Mean resolution time", (n.overall.mttr | duration) if n.overall.mttr is not none else "—", "failure → service restored · last " ~ n.window_days ~ " days", "#performance", "info", "check") }}
+  {{ kpi("Response within target", (n.overall.sla ~ "%") if n.overall.sla is not none else "—", n.overall.alerts ~ " alerts in the last " ~ n.window_days ~ " days",
+         "#performance", "good" if (n.overall.sla or 0) >= 90 else "warning", "shield", (n.overall.sla or 0, 100)) }}
+</div>
+
+{# ---- Escalation policy ---- #}
+<section class="card">
+  <h2>Escalation path</h2>
+  <p class="muted small">Unacknowledged alerts climb one level each time the response target passes. A branch that is completely offline alerts the CEO immediately.</p>
+  <ol class="policy-path">
+    {% for lvl in n.levels %}
+    <li class="{{ 'esc-ceo' if lvl.code == 'CEO' }}"><span class="pp-code">{{ lvl.code }}</span><span class="pp-name">{{ lvl.name }}</span>
+      <span class="pp-when">{{ ["At detection", "After 1 × target", "After 2 × targets", "After 3 × targets · or immediately if a branch is offline"][loop.index0] }}</span></li>
     {% endfor %}
+  </ol>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Service impact</th><th>Severity</th><th class="num">Response target</th><th>Escalates up to</th><th>Notification method</th></tr></thead>
+    <tbody>
+      {% for s in n.by_severity %}
+      <tr><td>{{ impact_badge(s.code) }}</td><td>{{ sev(s.code) }}</td><td class="num">{{ s.target | duration }}</td><td><strong>{{ s.max_level }}</strong></td>
+        <td class="small">{{ {"P1": "Call + SMS + email + Teams + in-app", "P2": "SMS + email + Teams + in-app", "P3": "Email ticket + in-app", "P4": "Next-day report"}[s.code] }}</td></tr>
+      {% endfor %}
     </tbody>
   </table></div>
 </section>
-<section class="card">
-  <h2>Log a user-reported incident</h2>
-  <p class="secondary small">Outages reported by staff or customers count against the proactive-detection KPI unless monitoring already raised them.</p>
+
+{# ---- Incidents grouped by branch ---- #}
+<h2 class="section-title" id="incidents">Open incidents — grouped by branch ({{ n.incidents | length }})</h2>
+{% for g in n.incidents %}{% set lead = g.lead %}
+<section class="incident incident-{{ g.severity }}">
+  <header class="inc-head">
+    <div class="inc-title">
+      {{ impact_badge(g.severity) }}
+      <h3>{% if g.branch %}<a href="/branches/{{ g.branch.id }}">{{ g.branch.code }} {{ g.branch.name }}</a> <span class="muted small">{{ g.branch.region.code }}</span>{% else %}Estate-wide{% endif %}</h3>
+      {% if g.offline %}<span class="badge"><span class="dot critical"></span>Branch offline</span>{% endif %}
+      {% if g.ceo %}<span class="badge ceo-badge">★ CEO informed</span>{% endif %}
+    </div>
+    <div class="inc-meta">{{ g.alerts | length }} alert{{ "s" if g.alerts | length != 1 }} · {{ g.assets | length }} asset{{ "s" if g.assets | length != 1 }} affected · started {{ g.age_min | duration }} ago ·
+      {% if g.unacked %}<span class="fail">{{ g.unacked }} awaiting response</span>{% else %}<span class="pass">✓ all acknowledged</span>{% endif %}</div>
+  </header>
+  <div class="inc-body">
+    <div class="inc-esc">
+      <div class="inc-label">Escalation — {{ lead.alert.ticket_ref or "" }}</div>
+      {{ escalation_stepper(lead.path, True) }}
+      <div class="inc-label">Notifications sent</div>
+      {{ channel_chips(lead.channels) }}
+    </div>
+    <div class="inc-alerts">
+      <table><tbody>
+      {% for r in g.alerts %}{% set a = r.alert %}
+        <tr>
+          <td>{{ sev(a.severity) }}</td>
+          <td><a href="/alerts/{{ a.id }}">{{ a.title }}</a>
+            <div class="muted small">{{ a.category.replace("_", " ").title() }}{% if a.asset %} · <span class="mono">{{ a.asset.asset_number }}</span>{% endif %} · {{ r.age_min | duration }} · reached {{ ["L1", "L2", "L3", "CEO"][a.escalation_level] }}{% if r.ceo and a.escalation_level < 3 %} + CEO{% endif %}</div></td>
+          <td class="nowrap right">
+            {% if a.status == "ACKNOWLEDGED" %}<span class="pass small">✓ {{ a.acknowledged_by.full_name if a.acknowledged_by else "acknowledged" }}</span>
+            {% elif r.overdue %}<span class="fail small">⚠ response overdue</span>
+            {% else %}<span class="small muted">respond by {{ a.response_due_at | dt("%H:%M") }}</span>{% endif %}
+            {% if a.status == "OPEN" and can(user, "alert.respond") %}
+            <form method="post" action="/alerts/{{ a.id }}/ack" class="inline">{{ csrf() }}<input type="hidden" name="next" value="/noc"><button class="btn small primary" type="submit">Acknowledge</button></form>
+            {% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody></table>
+    </div>
+  </div>
+</section>
+{% else %}
+<section class="card all-clear"><h2>✓ All clear</h2><p class="muted">No open incidents in your area.</p></section>
+{% endfor %}
+
+{# ---- Affected assets per region / branch ---- #}
+<h2 class="section-title" id="affected">Affected assets by region and branch</h2>
+{% if n.affected %}
+<div class="grid grid-2">
+{% for reg in n.affected %}
+  <section class="card">
+    <div class="page-head"><h2>{{ reg.region.code }} · {{ reg.region.name }}</h2>
+      <div class="legend"><span><span class="dot critical"></span>{{ reg.down }} down</span><span><span class="dot warning"></span>{{ reg.degraded }} degraded</span><span><span class="dot"></span>{{ reg.unreachable }} unreachable</span></div></div>
+    {% for b in reg.branch_list %}
+      <h3><a href="/branches/{{ b.branch.id }}">{{ b.branch.code }} {{ b.branch.name }}</a>{% if b.offline %} <span class="badge"><span class="dot critical"></span>Offline</span>{% endif %}</h3>
+      <table><tbody>{% for x in b.assets %}
+        <tr><td><a class="mono small" href="/assets/{{ x.asset.id }}">{{ x.asset.asset_number }}</a></td>
+          <td class="small">{{ TYPE_LABELS[x.asset.asset_type] }} · {{ x.asset.hostname or "" }}</td>
+          <td><span class="badge"><span class="dot {{ {'down': 'critical', 'degraded': 'warning'}.get(x.state, '') }}"></span>{{ x.state.title() }}</span></td>
+          <td class="small muted nowrap">since {{ x.since | ago }}</td></tr>{% endfor %}</tbody></table>
+    {% endfor %}
+  </section>
+{% endfor %}
+</div>
+{% else %}<section class="card all-clear"><p class="muted">No assets are down or degraded.</p></section>{% endif %}
+
+{# ---- Performance ---- #}
+<h2 class="section-title" id="performance">Response &amp; resolution — last {{ n.window_days }} days</h2>
+<div class="grid grid-2">
+  <section class="card">
+    <h2>By region</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Region</th><th class="num">Alerts</th><th class="num">Open</th><th class="num">Mean response</th><th class="num">Mean resolution</th><th class="num">Within target</th></tr></thead>
+      <tbody>{% for p in n.performance %}
+        <tr><td>{{ p.region.code }} · {{ p.region.name }}</td><td class="num">{{ p.alerts }}</td><td class="num">{{ p.open }}</td>
+          <td class="num">{{ p.mtta | duration }}</td><td class="num">{{ p.mttr | duration }}</td>
+          <td class="num {{ 'fail' if p.sla is not none and p.sla < 90 }}">{{ (p.sla ~ "%") if p.sla is not none else "—" }}</td></tr>
+      {% else %}<tr><td colspan="6" class="muted">No alerts in this period.</td></tr>{% endfor %}</tbody>
+      <tfoot><tr><td>All regions</td><td class="num">{{ n.overall.alerts }}</td><td class="num">{{ n.overall.open }}</td><td class="num">{{ n.overall.mtta | duration }}</td>
+        <td class="num">{{ n.overall.mttr | duration }}</td><td class="num">{{ (n.overall.sla ~ "%") if n.overall.sla is not none else "—" }}</td></tr></tfoot>
+    </table></div>
+  </section>
+  <section class="card">
+    <h2>By service impact</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Impact</th><th class="num">Target</th><th class="num">Alerts</th><th class="num">Mean response</th><th class="num">Mean resolution</th><th class="num">Within target</th></tr></thead>
+      <tbody>{% for s in n.by_severity %}
+        <tr><td>{{ impact_badge(s.code) }}</td><td class="num">{{ s.target | duration }}</td><td class="num">{{ s.alerts }}</td>
+          <td class="num">{{ s.mtta | duration }}</td><td class="num">{{ s.mttr | duration }}</td>
+          <td class="num {{ 'fail' if s.sla is not none and s.sla < 90 }}">{{ (s.sla ~ "%") if s.sla is not none else "—" }}</td></tr>{% endfor %}</tbody>
+    </table></div>
+  </section>
+</div>
+
+<details class="card no-print">
+  <summary><strong>Log a user-reported incident</strong> <span class="muted small">— outages reported by staff or customers count against the proactive-detection KPI unless monitoring already raised them</span></summary>
   {% if can(user, "incident.report") %}
-  <form method="post" action="/noc/incident" class="stack">
+  <form method="post" action="/noc/incident" class="form-grid">
     {{ csrf() }}
-    <div><label for="branch_id">Branch</label><select id="branch_id" name="branch_id" required>
-      {% for b in branches %}<option value="{{ b.id }}">{{ b.code }} {{ b.name }}</option>{% endfor %}</select></div>
-    <div><label for="asset_number">Asset number (optional)</label><input id="asset_number" name="asset_number" type="text" placeholder="KE-NRB-0012-RTR-00041"></div>
-    <div><label for="severity">Severity</label><select id="severity" name="severity">{% for s in ["P1","P2","P3","P4"] %}<option {{ "selected" if s == "P2" }}>{{ s }}</option>{% endfor %}</select></div>
-    <div><label for="description">Description</label><textarea id="description" name="description" required></textarea></div>
-    <button class="btn primary" type="submit">Log incident</button>
+    <div class="field"><label for="branch_id">Branch</label><select id="branch_id" name="branch_id" required>
+      {% for b in n.branches %}<option value="{{ b.id }}">{{ b.code }} {{ b.name }}</option>{% endfor %}</select></div>
+    <div class="field"><label for="asset_number">Asset number (optional)</label><input id="asset_number" name="asset_number" type="text" placeholder="KE-NRB-0012-RTR-00041"></div>
+    <div class="field"><label for="severity">Severity</label><select id="severity" name="severity">{% for s in ["P1","P2","P3","P4"] %}<option {{ "selected" if s == "P2" }}>{{ s }}</option>{% endfor %}</select></div>
+    <div class="field full"><label for="description">Description</label><textarea id="description" name="description" required></textarea></div>
+    <div><button class="btn primary" type="submit">Log incident</button></div>
   </form>
   {% else %}<p class="muted small">Only NOC analysts can log incidents.</p>{% endif %}
-</section>
-</div>
+</details>
+{% endif %}
 {% endblock %}
