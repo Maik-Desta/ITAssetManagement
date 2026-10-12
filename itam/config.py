@@ -37,9 +37,9 @@ class Settings:
     database_url: str = field(default_factory=_database_url)
     secret_key: str = field(default_factory=lambda: _env("SECRET_KEY") or secrets.token_hex(32))
     # Country code used as the CC part of the asset number standard.
-    country_code: str = field(default_factory=lambda: _env("COUNTRY_CODE", "KE"))
+    country_code: str = field(default_factory=lambda: _env("COUNTRY_CODE", "CM"))
     bank_name: str = field(default_factory=lambda: _env("BANK_NAME", "The Bank"))
-    currency: str = field(default_factory=lambda: _env("CURRENCY", "USD"))
+    currency: str = field(default_factory=lambda: _env("CURRENCY", "XAF"))
 
     # Monitoring / discovery thresholds (slides 18, 20, 21).
     missing_after_hours: int = field(default_factory=lambda: _env_int("MISSING_AFTER_HOURS", 72))

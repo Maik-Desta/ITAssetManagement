@@ -33,7 +33,7 @@ maker-checker approval, automated and physical audits, executive dashboards and 
 python3 -m venv .venv && . .venv/bin/activate
 pip install -r requirements-dev.txt
 export ITAM_SECRET_KEY=change-me
-python -m itam.cli seed            # ~100 branches, ~1,100 assets, users for every role, live alerts
+python -m itam.cli seed            # Cameroon: 10 regions, 250 branches, ~2,700 assets, users for every role, live alerts
 python -m itam.cli serve           # http://127.0.0.1:8000
 ```
 
@@ -44,8 +44,8 @@ Demo password for every seeded user: `ChangeMe!2026` (demo only).
 | `ceo` / `cio` | Executive / CIO | Dashboard, KPIs, approve disposals |
 | `noc` | NOC analyst | NOC console: acknowledge/resolve, log user-reported incidents |
 | `itam` | IT Asset Manager | Register, receive & tag, second approvals, exceptions, audits |
-| `lead.nrb`, `eng.nrb` | Regional lead / engineer (Nairobi) | Approve moves, install, execute changes, scan audits |
-| `bm0002` … `bm0103` | Branch managers | Accept custody, attest, approve transfers out |
+| `lead.lit`, `eng.lit` (also `.cen`, `.oue`, …) | Regional lead / engineer (Littoral – Douala) | Approve moves, install, execute changes, scan audits |
+| `bm0002` … `bm0250` | Branch managers | Accept custody, attest, approve transfers out |
 | `head.infra`, `ciso`, `cfo`, `finance`, `procurement`, `audit`, `admin` | | Their own steps in the workflows |
 
 To make the demo move, run the collector simulator against the running server:
@@ -73,13 +73,13 @@ database expires after 30 days. For a real deployment, remove `ITAM_DEMO_SEED` a
 ## Collector API
 
 Regional collectors authenticate with `X-API-Key` (created under *Administration → Collectors* or with
-`python -m itam.cli create-collector NAME --region NRB`; only a hash is stored). A collector may only report on
+`python -m itam.cli create-collector NAME --region LIT`; only a hash is stored). A collector may only report on
 branches in its own region.
 
 ```bash
 # Poll results (every 1–5 min). Buffered results may carry their original timestamp.
 curl -X POST $URL/api/v1/collector/poll -H "X-API-Key: $KEY" -H 'Content-Type: application/json' \
-  -d '[{"asset_number":"KE-NRB-0012-RTR-00001","state":"DOWN","occurred_at":"2026-10-11T08:00:00Z","message":"ICMP timeout"},
+  -d '[{"asset_number":"CM-LIT-0012-RTR-00001","state":"DOWN","occurred_at":"2026-10-11T08:00:00Z","message":"ICMP timeout"},
        {"ip":"10.20.12.7","metrics":{"on_battery":true}}]'
 
 # Syslog / traps / config changes
@@ -102,7 +102,7 @@ Environment variables (prefix `ITAM_`):
 | `DATABASE_URL` | `sqlite:///./itam.db` | SQLAlchemy URL. Use PostgreSQL in production. A plain `DATABASE_URL` (e.g. Render's `postgres://…`) is also accepted |
 | `DEMO_SEED` / `DEMO_PASSWORD` | `false` / `ChangeMe!2026` | Load demo data on first start into an empty database; password for the demo users |
 | `SECRET_KEY` | random per process | Session signing key. **Set it**, or sessions reset on restart |
-| `COUNTRY_CODE` / `BANK_NAME` / `CURRENCY` | `KE` / `The Bank` / `USD` | CC part of asset numbers; branding; currency shown for asset values |
+| `COUNTRY_CODE` / `BANK_NAME` / `CURRENCY` | `CM` / `The Bank` / `XAF` | CC part of asset numbers; branding; currency shown for asset values |
 | `MFA_REQUIRED_ROLES` | — | e.g. `ADMIN,CIO,CFO,CISO,IT_ASSET_MANAGER` |
 | `SECURE_COOKIES` | `false` | Set `true` behind TLS |
 | `MISSING_AFTER_HOURS` / `REMOVAL_ALERT_MINUTES` | 72 / 15 | Slide 18 / 20 thresholds |

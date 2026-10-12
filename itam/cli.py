@@ -29,7 +29,7 @@ def cmd_seed(args) -> None:
         result = seed(db, small=args.small)
     print(f"Seeded {result['branches']} branches, {result['assets']} assets, {result['users']} users.")
     print(f"Demo users (password '{DEMO_PASSWORD}'): admin, ceo, cio, cfo, head.infra, ciso, itam, noc, "
-          "procurement, finance, audit, lead.nrb, eng.nrb, bm0002 ...")
+          "procurement, finance, audit, lead.lit, eng.lit, bm0002 ...")
 
 
 def cmd_create_admin(args) -> None:

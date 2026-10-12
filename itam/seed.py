@@ -52,30 +52,63 @@ from itam.services import requests as req_svc
 
 DEMO_PASSWORD = os.environ.get("ITAM_DEMO_PASSWORD") or "ChangeMe!2026"
 
+# Cameroon: the 10 regions. (code, name, regional capital lat, lon, rollout wave, spread in degrees)
 REGIONS = [
-    # code, name, centre lat, lon, wave
-    ("NRB", "Nairobi (Capital)", -1.286, 36.817, "WAVE1"),
-    ("MSA", "Coast (Region A)", -4.043, 39.668, "WAVE2"),
-    ("KSM", "Western (Region B)", -0.091, 34.768, "WAVE2"),
-    ("NKR", "Rift Valley", -0.303, 36.080, "WAVE3"),
-    ("NYR", "Central", -0.420, 36.950, "WAVE3"),
+    ("LIT", "Littoral (Douala)", 4.0511, 9.7679, "WAVE1", 0.45),
+    ("CEN", "Centre (Yaoundé)", 3.8480, 11.5021, "WAVE1", 0.55),
+    ("OUE", "Ouest (Bafoussam)", 5.4781, 10.4176, "WAVE2", 0.35),
+    ("SOW", "Sud-Ouest (Buea)", 4.1527, 9.2410, "WAVE2", 0.40),
+    ("NOW", "Nord-Ouest (Bamenda)", 5.9631, 10.1591, "WAVE2", 0.40),
+    ("SUD", "Sud (Ebolowa)", 2.9000, 11.1500, "WAVE2", 0.70),
+    ("NOR", "Nord (Garoua)", 9.3014, 13.3977, "WAVE3", 0.80),
+    ("EXN", "Extrême-Nord (Maroua)", 10.5956, 14.3247, "WAVE3", 0.60),
+    ("ADA", "Adamaoua (Ngaoundéré)", 7.3277, 13.5847, "WAVE3", 0.80),
+    ("EST", "Est (Bertoua)", 4.5785, 13.6846, "WAVE3", 1.00),
 ]
-BRANCH_COUNTS = {"NRB": 36, "MSA": 18, "KSM": 17, "NKR": 16, "NYR": 15}
+# 249 branches + head office = 250 sites, weighted by economic activity.
+BRANCH_COUNTS = {"LIT": 60, "CEN": 55, "OUE": 25, "SOW": 20, "NOW": 18, "SUD": 14, "NOR": 15, "EXN": 15,
+                 "ADA": 15, "EST": 12}
+# Neighbourhoods of the two largest cities first (clustered near the city centre), then towns across the region.
+CITY = {"LIT": "Douala", "CEN": "Yaoundé"}
 TOWNS = {
-    "NRB": ["CBD", "Westlands", "Upper Hill", "Kilimani", "Karen", "Gigiri", "Eastleigh", "Industrial Area",
-            "Langata", "Kasarani", "Embakasi", "Ruaraka", "Parklands", "Ngong Road", "Thika Road", "Lavington",
-            "Muthaiga", "Donholm", "Buruburu", "South B", "South C", "Kahawa", "Ruiru", "Kitengela", "Rongai",
-            "Syokimau", "Athi River", "Kikuyu", "Limuru", "Juja", "Githurai", "Kayole", "Umoja", "Pangani",
-            "Hurlingham", "Yaya"],
-    "MSA": ["Mombasa Island", "Nyali", "Bamburi", "Likoni", "Mtwapa", "Kilifi", "Malindi", "Watamu", "Diani",
-            "Ukunda", "Voi", "Taveta", "Lamu", "Kwale", "Changamwe", "Mariakani", "Kilindini", "Bombolulu"],
-    "KSM": ["Kisumu CBD", "Milimani", "Kakamega", "Bungoma", "Busia", "Siaya", "Bondo", "Homa Bay", "Migori",
-            "Kisii", "Nyamira", "Vihiga", "Mumias", "Webuye", "Kericho", "Awendo", "Ahero"],
-    "NKR": ["Nakuru CBD", "Naivasha", "Eldoret", "Kitale", "Nanyuki", "Narok", "Bomet", "Kabarnet", "Iten",
-            "Molo", "Gilgil", "Nyahururu", "Kapsabet", "Lodwar", "Maralal", "Eldama Ravine"],
-    "NYR": ["Nyeri", "Karatina", "Murang'a", "Kerugoya", "Embu", "Meru", "Chuka", "Thika", "Kiambu",
-            "Othaya", "Nanyuki Rd", "Isiolo", "Maua", "Runyenjes", "Mwea"],
+    "LIT": ["Akwa", "Bonanjo", "Bonapriso", "Bonamoussadi", "Deido", "Bali", "Bonabéri", "Makepe", "Logpom", "Kotto",
+            "Ndokoti", "Bépanda", "Ndogbong", "PK8", "PK14", "Bassa", "Yassa", "Japoma", "Logbaba",
+            "Cité des Palmiers", "New Bell", "Mboppi", "Akwa Nord", "Denver", "Ange Raphaël", "Youpwé", "Nyalla",
+            "Village", "Bonadibong", "Bessengué", "Koumassi", "Ndogpassi", "Kotto Bloc", "Beedi", "Maképé Missoké",
+            "Grand Hangar", "Rond-point Deido", "Bonaloka", "Ndog-Bong", "Bonamikano", "Nkongsamba", "Edéa", "Loum",
+            "Mbanga", "Manjo", "Penja", "Dibombari", "Yabassi", "Dizangué", "Mouanko", "Njombé", "Melong",
+            "Nkongsamba Centre", "Edéa Centre", "Pouma", "Ngambé", "Massock", "Bonaléa", "Souza", "Ekité"],
+    "CEN": ["Centre-ville", "Bastos", "Hippodrome", "Mvan", "Nlongkak", "Mvog-Mbi", "Mokolo", "Melen", "Biyem-Assi",
+            "Essos", "Emana", "Etoudi", "Ekounou", "Omnisport", "Nsimeyong", "Mendong", "Odza", "Mimboman",
+            "Nkolbisson", "Elig-Edzoa", "Tsinga", "Ngoa-Ekellé", "Mvog-Ada", "Olézoa", "Damas", "Efoulan",
+            "Messassi", "Nkoabang", "Simbock", "Ahala", "Mvolyé", "Ngousso", "Nkomo", "Obili", "Briqueterie",
+            "Mbalmayo", "Obala", "Bafia", "Eséka", "Akonolinga", "Monatélé", "Nanga-Eboko", "Ntui", "Mfou", "Soa",
+            "Saa", "Ayos", "Makak", "Ngoumou", "Okola", "Mbandjock", "Évodoula", "Ombessa", "Yoko", "Esse"],
+    "OUE": ["Bafoussam Centre", "Bafoussam Marché A", "Bafoussam Tamdja", "Dschang", "Mbouda", "Foumban", "Bafang",
+            "Bangangté", "Foumbot", "Bandjoun", "Baham", "Bazou", "Kékem", "Penka-Michel", "Batié", "Bangou",
+            "Koutaba", "Malantouen", "Galim", "Santchou", "Fokoué", "Bana", "Bamendjou", "Bafoussam Kouogouo",
+            "Dschang Foto"],
+    "SOW": ["Buea", "Buea Molyko", "Limbe", "Limbe Down Beach", "Kumba", "Kumba Fiango", "Tiko", "Mutengene",
+            "Muyuka", "Mamfe", "Idenau", "Ekondo-Titi", "Mundemba", "Bangem", "Tombel", "Fontem", "Nguti", "Konye",
+            "Mbonge", "Tiko Likomba"],
+    "NOW": ["Bamenda Commercial Avenue", "Bamenda Nkwen", "Bamenda Up Station", "Bamenda Mile 4", "Kumbo", "Ndop",
+            "Wum", "Nkambé", "Bali Nyonga", "Bafut", "Fundong", "Mbengwi", "Batibo", "Jakiri", "Santa",
+            "Bamenda Food Market", "Bambui", "Bamenda Hospital Roundabout"],
+    "SUD": ["Ebolowa", "Ebolowa Marché", "Kribi", "Kribi Port", "Sangmélima", "Sangmélima Centre", "Ambam",
+            "Kyé-Ossi", "Lolodorf", "Campo", "Djoum", "Mvangan", "Zoétélé", "Akom II"],
+    "NOR": ["Garoua Centre", "Garoua Marché", "Garoua Roumdé Adjia", "Garoua Yelwa", "Garoua Poumpoumré", "Guider",
+            "Figuil", "Pitoa", "Lagdo", "Poli", "Tcholliré", "Touboro", "Rey Bouba", "Mayo-Oulo", "Bibémi"],
+    "EXN": ["Maroua Domayo", "Maroua Djarengol", "Maroua Marché", "Mokolo", "Kousséri", "Mora", "Yagoua", "Kaélé",
+            "Mindif", "Maga", "Makary", "Waza", "Doukoula", "Bogo", "Guidiguis"],
+    "ADA": ["Ngaoundéré Centre", "Ngaoundéré Gare", "Ngaoundéré Marché", "Ngaoundéré Dang", "Meiganga", "Tibati",
+            "Banyo", "Tignère", "Ngaoundal", "Mbé", "Dir", "Martap", "Belel", "Mbakaou", "Djohong"],
+    "EST": ["Bertoua Centre", "Bertoua Marché", "Bertoua Tigaza", "Batouri", "Abong-Mbang", "Yokadouma",
+            "Garoua-Boulaï", "Bélabo", "Doumé", "Lomié", "Kenzou", "Moloundou"],
 }
+# Demo prices are set in USD and converted to the configured currency (FCFA ≈ 600 per USD).
+FX = {"XAF": 600, "XOF": 600, "USD": 1, "EUR": 0.92}.get(settings.currency, 1)
+UNIT_COST_USD = {"RTR": 4800, "SWT": 2500, "FWL": 9500, "SRV": 18000, "UPS": 1200, "ATM": 32000, "EUD": 1200,
+                 "ENV": 900, "STO": 15000, "WAP": 600}
 
 MODELS = [
     # vendor, model, type, eol offset days, eos offset days
@@ -97,7 +130,7 @@ BRANCH_KIT = [("RTR", 2), ("SWT", 2), ("FWL", 1), ("SRV", 1), ("UPS", 1), ("ATM"
 def _user(db: Session, username: str, full_name: str, roles: list[Role], region: Region | None = None,
           branch: Branch | None = None) -> User:
     u = User(username=username, full_name=full_name, email=f"{username}@bank.local",
-             phone=f"+2547{zlib.crc32(username.encode()) % 10**8:08d}", password_hash=hash_password(DEMO_PASSWORD),
+             phone=f"+2376{zlib.crc32(username.encode()) % 10**8:08d}", password_hash=hash_password(DEMO_PASSWORD),
              roles=[r.value for r in roles], region_id=region.id if region else None,
              branch_id=branch.id if branch else None, is_active=True)
     db.add(u)
@@ -124,8 +157,8 @@ def seed(db: Session, small: bool = False) -> dict:
     db.flush()
 
     # Head office + central store
-    hq = Branch(code="0001", name="Head Office & Central Store", region_id=regions["NRB"].id, city="Nairobi",
-                latitude=-1.2864, longitude=36.8172, is_head_office=True, wave="PILOT",
+    hq = Branch(code="0001", name="Head Office & Central Store (Bonanjo)", region_id=regions["LIT"].id, city="Douala",
+                latitude=4.0429, longitude=9.6915, is_head_office=True, wave="PILOT",
                 rollout_stage=RolloutStage.LIVE.value, rollout_checklist={}, went_live_at=now - timedelta(days=150))
     db.add(hq)
     db.flush()
@@ -135,15 +168,20 @@ def seed(db: Session, small: bool = False) -> dict:
 
     branches: list[Branch] = [hq]
     number = 2
-    for code, _name, lat, lon, wave in REGIONS:
+    for code, _name, lat, lon, wave, spread in REGIONS:
         count = BRANCH_COUNTS[code] if not small else 3
+        towns = TOWNS[code]
+        city_parts = 40 if code == "LIT" else 35 if code == "CEN" else 0
         for i in range(count):
-            town = TOWNS[code][i % len(TOWNS[code])]
-            b = Branch(code=f"{number:04d}", name=f"{town} Branch", region_id=regions[code].id,
-                       city=town, latitude=round(lat + rnd.uniform(-0.35, 0.35), 4),
-                       longitude=round(lon + rnd.uniform(-0.35, 0.35), 4), wave=wave,
+            town = towns[i % len(towns)] + ("" if i < len(towns) else f" {i // len(towns) + 1}")
+            in_city = i < city_parts
+            name = f"{CITY[code]} {town}" if in_city else town
+            jitter = 0.07 if in_city else spread
+            b = Branch(code=f"{number:04d}", name=f"{name} Branch", region_id=regions[code].id,
+                       city=CITY[code] if in_city else town, latitude=round(lat + rnd.uniform(-jitter, jitter), 4),
+                       longitude=round(lon + rnd.uniform(-jitter, jitter), 4), wave=wave,
                        rollout_stage=RolloutStage.NOT_STARTED.value, rollout_checklist={})
-            if code == "NRB" and i < 5:
+            if code == "LIT" and i < 5:
                 b.wave = "PILOT"
             db.add(b)
             branches.append(b)
@@ -213,12 +251,12 @@ def seed(db: Session, small: bool = False) -> dict:
         db.add(m)
         models.setdefault(mtype, []).append(m)
     contracts = []
-    for i, (supplier, years) in enumerate([("Dimension Data", 3), ("Seven Seas Technologies", 3), ("Copy Cat", 2),
-                                            ("NCR Kenya", 5), ("Dell Kenya", 3)]):
+    for i, (supplier, years) in enumerate([("Dimension Data", 3), ("CFAO Technologies", 3), ("Orange Business Cameroun", 2),
+                                            ("NCR Afrique Centrale", 5), ("Dell Technologies", 3)]):
         start = today - timedelta(days=rnd.randint(200, 1000))
         c = Contract(reference=f"CON-{2023 + i % 3}-{i + 1:03d}", supplier=supplier, po_number=f"PO-{48000 + i}",
                      contract_type="WARRANTY", start_date=start, warranty_end=start + timedelta(days=365 * years),
-                     support_end=start + timedelta(days=365 * years), cost=rnd.randint(2, 40) * 100000)
+                     support_end=start + timedelta(days=365 * years), cost=rnd.randint(2, 40) * 100000 * FX)
         db.add(c)
         contracts.append(c)
     db.flush()
@@ -259,7 +297,7 @@ def seed(db: Session, small: bool = False) -> dict:
                     ip_address=f"{subnet}.{host_no}" if atype != "EUD" else None,
                     mac_address=":".join(f"{rnd.randint(0, 255):02x}" for _ in range(6)),
                     contract_id=rnd.choice(contracts).id if rnd.random() > 0.08 else None,
-                    purchase_cost=float(rnd.choice([1200, 2500, 4800, 9500, 18000, 32000])),
+                    purchase_cost=float(UNIT_COST_USD[atype] * FX * rnd.choice([0.9, 1.0, 1.0, 1.1])),
                     finance_asset_ref=f"FA-{100000 + created}" if rnd.random() > 0.06 else None,
                     install_date=today - timedelta(days=installed_days) if live or b.is_head_office else None,
                     received_date=(today - timedelta(days=installed_days + 14) if live or b.is_head_office
@@ -291,7 +329,7 @@ def seed(db: Session, small: bool = False) -> dict:
         for _ in range(qty):
             asset_svc.register_asset(db, itam, branch=hq, asset_type=atype,
                                      serial_number=f"ST{atype}{rnd.randint(100000, 999999)}",
-                                     model_id=models[atype][0].id, contract_id=contracts[0].id, purchase_cost=cost,
+                                     model_id=models[atype][0].id, contract_id=contracts[0].id, purchase_cost=cost * FX,
                                      finance_asset_ref=f"FA-{200000 + rnd.randint(0, 9999)}", location_id=store_loc,
                                      received_date=today - timedelta(days=rnd.choice([3, 10, 21, 45, 75, 120, 200])))
 
@@ -330,25 +368,25 @@ def seed(db: Session, small: bool = False) -> dict:
     audit_svc.schedule_quarterly_cycle(db, itam, today + timedelta(days=3))
 
     # Live state: one branch offline, one degraded (backup link down), a faulty server, an env alarm.
-    nrb_live = [b for b in live_branches if b.region_id == regions["NRB"].id]
-    offline_branch, degraded_branch = nrb_live[7], nrb_live[11]
-    mon = collectors["NRB"]
+    lit_live = [b for b in live_branches if b.region_id == regions["LIT"].id]
+    offline_branch, degraded_branch = lit_live[7], lit_live[11]
+    mon = collectors["LIT"]
     routers = [a for a in offline_branch.assets if a.asset_type == "RTR"]
     for r in routers:
         mon_svc.apply_state(db, r, OperState.DOWN, now - timedelta(minutes=9), mon, "ICMP timeout; BGP down")
     r2 = [a for a in degraded_branch.assets if a.asset_type == "RTR"][1]
     mon_svc.apply_state(db, r2, OperState.DOWN, now - timedelta(minutes=34), mon, "LTE backup link down")
-    srv_branch = rnd.choice([b for b in live_branches if b.region_id == regions["MSA"].id] or live_branches)
+    srv_branch = rnd.choice([b for b in live_branches if b.region_id == regions["CEN"].id] or live_branches)
     srv = [a for a in srv_branch.assets if a.asset_type == "SRV"][0]
-    mon_svc.apply_state(db, srv, OperState.DOWN, now - timedelta(minutes=52), collectors["MSA"], "WinRM unreachable")
-    env = [a for a in nrb_live[3].assets if a.asset_type == "ENV"][0]
+    mon_svc.apply_state(db, srv, OperState.DOWN, now - timedelta(minutes=52), collectors["CEN"], "WinRM unreachable")
+    env = [a for a in lit_live[3].assets if a.asset_type == "ENV"][0]
     mon_svc.ingest_poll_results(db, mon, [{"asset_number": env.asset_number, "metrics": {"temperature_c": 38.5},
                                            "occurred_at": (now - timedelta(minutes=12)).isoformat()}])
 
     # A core firewall down for over an hour with nobody responding: escalates all the way to the CEO.
-    fw_branch = [b for b in live_branches if b.region_id == regions["KSM"].id][2]
+    fw_branch = [b for b in live_branches if b.region_id == regions["OUE"].id][2]
     fw = [a for a in fw_branch.assets if a.asset_type == "FWL"][0]
-    mon_svc.apply_state(db, fw, OperState.DOWN, now - timedelta(minutes=78), collectors["KSM"], "HA heartbeat lost")
+    mon_svc.apply_state(db, fw, OperState.DOWN, now - timedelta(minutes=78), collectors["OUE"], "HA heartbeat lost")
 
     # Collectors poll every minute: live alerts were detected 1-2 minutes after the failure.
     for a in db.execute(select(Alert).where(Alert.status == AlertStatus.OPEN.value)).scalars():
@@ -370,13 +408,13 @@ def seed(db: Session, small: bool = False) -> dict:
                 e.reason = f"Not acknowledged within {int((target * e.level).total_seconds() // 60)} min"
 
     # Missing assets: not seen for 4 days, no approved change.
-    for b in (nrb_live[2], nrb_live[15]):
+    for b in (lit_live[2], lit_live[15]):
         victim = [a for a in b.assets if a.asset_type == "SWT"][1]
         victim.last_seen_at = now - timedelta(days=4)
     disc_svc.detect_missing(db, now)
 
     # Rogue devices found by discovery.
-    for b, host in ((nrb_live[4], "unknown-ap"), (nrb_live[9], "android-hotspot"), (live_branches[-1], "rpi-4b")):
+    for b, host in ((lit_live[4], "unknown-ap"), (lit_live[9], "android-hotspot"), (live_branches[-1], "rpi-4b")):
         expected = disc_svc.expected_on_network(db, b)
         devices = [{"serial": a.serial_number, "mac": a.mac_address, "ip": a.ip_address} for a in expected
                    if a.status != AssetStatus.MISSING.value]
@@ -396,30 +434,30 @@ def seed(db: Session, small: bool = False) -> dict:
                                      "End of support — replaced by ISR 4331", ticket_ref="CHG-T-1002")
         change_svc.decide(db, head, c, True, "Replacement in place")
     eud = [a for a in live_branches[5].assets if a.asset_type == "EUD"][0]
-    t = change_svc.create_change(db, engineers["NRB"], eud, ChangeType.TRANSFER_BRANCH, "Staff relocation",
+    t = change_svc.create_change(db, engineers["LIT"], eud, ChangeType.TRANSFER_BRANCH, "Staff relocation",
                                  to_branch=live_branches[6])
     change_svc.decide(db, managers[live_branches[5].id], t, True, "OK")
     change_svc.decide(db, itam, t, True, "OK")
-    change_svc.execute(db, engineers["NRB"], t, eud.asset_number, evidence_ref="TN-2026-0311")  # now in transit
+    change_svc.execute(db, engineers["LIT"], t, eud.asset_number, evidence_ref="TN-2026-0311")  # now in transit
     # A completed disposal awaiting Finance confirmation.
     old = [a for a in live_branches[8].assets if a.asset_type == "EUD"][1]
-    rc = change_svc.create_change(db, engineers["NRB"], old, ChangeType.RETIRE, "Beyond economic repair",
+    rc = change_svc.create_change(db, engineers["LIT"], old, ChangeType.RETIRE, "Beyond economic repair",
                                   ticket_ref="CHG-T-1003")
-    change_svc.decide(db, leads["NRB"], rc, True, "Agreed")
+    change_svc.decide(db, leads["LIT"], rc, True, "Agreed")
     change_svc.decide(db, itam, rc, True, "Agreed")
-    change_svc.execute(db, engineers["NRB"], rc, old.asset_number, ticket_ref="CHG-T-1003")
+    change_svc.execute(db, engineers["LIT"], rc, old.asset_number, ticket_ref="CHG-T-1003")
     dc = change_svc.create_change(db, itam, old, ChangeType.DISPOSE, "WEEE disposal batch Q3")
     change_svc.decide(db, cio, dc, True, "Approved")
     change_svc.decide(db, cfo, dc, True, "Approved")
-    change_svc.execute(db, engineers["NRB"], dc, old.asset_number, wipe_certificate_ref="WIPE-2026-0042",
+    change_svc.execute(db, engineers["LIT"], dc, old.asset_number, wipe_certificate_ref="WIPE-2026-0042",
                        disposal_certificate_ref="WEEE-2026-0107")
 
     req_svc.create_request(db, managers[live_branches[12].id], branch=live_branches[12], asset_type="EUD",
                                 quantity=3, justification="New tellers joining", model_id=models["EUD"][0].id,
-                                estimated_cost=3600)
-    r2 = req_svc.create_request(db, engineers["MSA"], branch=[b for b in branches if b.region_id == regions["MSA"].id][0],
+                                estimated_cost=3600 * FX)
+    r2 = req_svc.create_request(db, engineers["CEN"], branch=[b for b in branches if b.region_id == regions["CEN"].id][0],
                                 asset_type="RTR", quantity=1, justification="Replace ISR 2901 (end of support)",
-                                model_id=models["RTR"][0].id, estimated_cost=4800)
+                                model_id=models["RTR"][0].id, estimated_cost=4800 * FX)
     req_svc.approve(db, itam, r2, "it")
     req_svc.approve(db, finance, r2, "budget")
     req_svc.record_po(db, procurement, r2, "PO-2026-0457", "Dimension Data")
@@ -436,7 +474,8 @@ def seed(db: Session, small: bool = False) -> dict:
         planned = start + timedelta(days=30 * month)
         db.add(Milestone(code=code, name=name, phase=phase, planned_date=planned,
                          actual_date=planned + timedelta(days=actual_delta) if actual_delta is not None else None,
-                         budget_planned=planned_budget, budget_actual=actual_budget))
+                         budget_planned=planned_budget * FX,
+                         budget_actual=actual_budget * FX if actual_budget is not None else None))
 
     auditlog.record(db, admin, "system.seed", "system", None, branches=len(branches), assets=created)
     return {"branches": len(branches), "assets": created, "users": len(db.execute(select(User)).scalars().all())}

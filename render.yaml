@@ -26,9 +26,11 @@ services:
       - key: ITAM_DEMO_PASSWORD
         sync: false
       - key: ITAM_COUNTRY_CODE
-        value: KE
+        value: CM
       - key: ITAM_BANK_NAME
         value: The Bank
+      - key: ITAM_CURRENCY
+        value: XAF
 
 databases:
   - name: itam-db

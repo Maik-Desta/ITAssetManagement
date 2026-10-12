@@ -184,15 +184,16 @@
     {%- if geo -%}
     {%- set lats = geo | map(attribute="latitude") | list -%}{%- set lons = geo | map(attribute="longitude") | list -%}
     {%- set la0, la1, lo0, lo1 = lats | min, lats | max, lons | min, lons | max -%}
-    {%- set W, H, P = 640, 300, 16 -%}
+    {%- set W, H, P = 640, 460, 16 -%}
     {%- set sx = (W - 2 * P) / ((lo1 - lo0) or 1) -%}{%- set sy = (H - 2 * P) / ((la1 - la0) or 1) -%}
     {%- set k = [sx, sy] | min -%}
+    {%- set ox = (W - (lo1 - lo0) * k) / 2 - P -%}{%- set oy = (H - (la1 - la0) * k) / 2 - P -%}
     <svg class="chart" viewBox="0 0 {{ W }} {{ H }}" role="img" aria-label="Map of branches coloured by status">
       {% for stt in ["not_monitored", "online", "degraded", "offline"] %}
       {% for b in geo if s.branch_states.get(b.id) == stt %}
       <a href="/branches/{{ b.id }}">
         <circle class="map-dot {{ stt }}" tabindex="0" r="{{ 7 if stt == 'offline' else 5 }}"
-          cx="{{ P + (b.longitude - lo0) * k }}" cy="{{ P + (la1 - b.latitude) * k }}"
+          cx="{{ P + ox + (b.longitude - lo0) * k }}" cy="{{ P + oy + (la1 - b.latitude) * k }}"
           data-tip="{{ b.code }} {{ b.name }} — {{ stt.replace('_', ' ').title() }}"/>
       </a>
       {% endfor %}{% endfor %}

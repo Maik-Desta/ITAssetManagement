@@ -185,7 +185,7 @@
     {{ csrf() }}
     <div class="field"><label for="branch_id">Branch</label><select id="branch_id" name="branch_id" required>
       {% for b in n.branches %}<option value="{{ b.id }}">{{ b.code }} {{ b.name }}</option>{% endfor %}</select></div>
-    <div class="field"><label for="asset_number">Asset number (optional)</label><input id="asset_number" name="asset_number" type="text" placeholder="KE-NRB-0012-RTR-00041"></div>
+    <div class="field"><label for="asset_number">Asset number (optional)</label><input id="asset_number" name="asset_number" type="text" placeholder="CM-LIT-0012-RTR-00041"></div>
     <div class="field"><label for="severity">Severity</label><select id="severity" name="severity">{% for s in ["P1","P2","P3","P4"] %}<option {{ "selected" if s == "P2" }}>{{ s }}</option>{% endfor %}</select></div>
     <div class="field full"><label for="description">Description</label><textarea id="description" name="description" required></textarea></div>
     <div><button class="btn primary" type="submit">Log incident</button></div>

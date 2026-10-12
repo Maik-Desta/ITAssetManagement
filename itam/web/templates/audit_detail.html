@@ -35,7 +35,7 @@
   <h2>Scan tag</h2>
   <p class="small secondary">Use a handheld scanner, type the asset number, or use the phone camera.</p>
   <form method="post" action="/audits/{{ audit.id }}/scan" class="stack">{{ csrf() }}
-    <input id="scanned" name="scanned" class="scan-input" required autocomplete="off" placeholder="KE-NRB-0012-RTR-00041" data-autofocus aria-label="Scanned tag">
+    <input id="scanned" name="scanned" class="scan-input" required autocomplete="off" placeholder="CM-LIT-0012-RTR-00041" data-autofocus aria-label="Scanned tag">
     <button class="btn small" type="button" data-camera-scan="#scanned" data-video-box="#camera" data-auto-submit="1">Use camera</button>
     <div id="camera" class="scanner"></div>
     <select name="location_id" aria-label="Found at location"><option value="">Found at registered location</option>{% for l in locations %}<option value="{{ l.id }}">Found at: {{ l.label }}</option>{% endfor %}</select>
