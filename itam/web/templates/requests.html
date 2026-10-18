@@ -1,8 +1,10 @@
 {% extends "base.html" %}
+{% from "macros.html" import mix_bar %}
 {% block title %}Equipment requests{% endblock %}
 {% block content %}
 <div class="page-head"><div><h1>Equipment requests</h1><p>Request against the approved catalogue → approve (IT + budget) → PO → shipping notice → goods-in, RFID tag &amp; register → configure &amp; burn-in → ship → branch receipt → install → go-live → custody sign-off</p></div>
   {% if can(user, "request.create") %}<a class="btn primary" href="/requests/new">New request</a>{% endif %}</div>
+<div class="summary-band one"><section class="mix-card">{{ mix_bar(status_mix, "Requests by status") }}</section></div>
 <div class="tabs"><a href="/requests" class="{{ 'active' if not status }}">All</a>
   {% for s in statuses %}<a href="/requests?status={{ s.value }}" class="{{ 'active' if status == s.value }}">{{ s.value.replace("_", " ").title() }}</a>{% endfor %}</div>
 <section class="card"><div class="table-wrap"><table>

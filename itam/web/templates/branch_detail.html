@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "macros.html" import branch_state, status_badge, oper_badge, sev, csrf, simple_badge with context %}
+{% from "macros.html" import kpi, branch_state, status_badge, oper_badge, sev, csrf, simple_badge with context %}
 {% block title %}{{ branch.code }} {{ branch.name }}{% endblock %}
 {% block content %}
 <div class="page-head">
@@ -12,12 +12,14 @@
   </div>
 </div>
 
-<div class="tiles">
-  <div class="tile"><div class="label">Assets</div><div class="value">{{ dq.assets }}</div></div>
-  <div class="tile"><div class="label">Data completeness</div><div class="value">{{ dq.completeness if dq.completeness is not none else "—" }}<small>%</small></div></div>
-  <div class="tile"><div class="label">Last audit accuracy</div><div class="value">{{ dq.accuracy if dq.accuracy is not none else "—" }}<small>%</small></div><div class="sub">{{ dq.last_audit.completed_at | dt("%Y-%m-%d") if dq.last_audit else "never audited" }}</div></div>
-  <div class="tile"><div class="label">Audit score</div><div class="value">{{ dq.score if dq.score is not none else "—" }}</div></div>
-  <div class="tile"><div class="label">Open alerts / exceptions</div><div class="value">{{ alerts | length }} <small>/ {{ exceptions | length }}</small></div></div>
+<div class="kpi-grid kpi-grid-auto">
+  {{ kpi("Assets", dq.assets, "registered at this branch", "/assets?branch=" ~ branch.code, "info", "box") }}
+  {{ kpi("Data completeness", dq.completeness if dq.completeness is not none else "—", "mandatory fields filled", None,
+         "good" if dq.completeness and dq.completeness >= 98 else "warning", "list", None, "%" if dq.completeness is not none else "") }}
+  {{ kpi("Last audit accuracy", dq.accuracy if dq.accuracy is not none else "—", dq.last_audit.completed_at | dt("%Y-%m-%d") if dq.last_audit else "never audited", None,
+         "good" if dq.accuracy and dq.accuracy >= 98 else "warning", "gauge", None, "%" if dq.accuracy is not none else "") }}
+  {{ kpi("Audit score", dq.score if dq.score is not none else "—", "data quality league table", "/data-quality", "info", "target") }}
+  {{ kpi("Open alerts", alerts | length, (exceptions | length) ~ " open exceptions", None, "critical" if alerts else "good", "alert") }}
 </div>
 
 <div class="grid grid-main">

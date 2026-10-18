@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "macros.html" import status_badge, oper_badge, pager %}
+{% from "macros.html" import status_badge, oper_badge, pager, mix_bar, kpi with context %}
 {% block title %}Assets{% endblock %}
 {% block content %}
 <div class="page-head">
@@ -8,6 +8,13 @@
     {% if can(user, "asset.export") %}<a class="btn" href="/assets/export.csv?{{ qs }}">Export CSV</a>{% endif %}
     {% if can(user, "asset.register") %}<a class="btn primary" href="/assets/new">Register asset</a>{% endif %}
   </div>
+</div>
+{% set c = status_mix.segments | map(attribute="n") | list %}
+<div class="summary-band">
+  <section class="mix-card">{{ mix_bar(status_mix, "Assets by lifecycle status", "Assets by lifecycle status") }}</section>
+  {{ kpi("Live", "{:,}".format(c[0]), "installed and active", "/assets?status=ACTIVE", "good", "check") }}
+  {{ kpi("Needs attention", "{:,}".format(c[1] + c[4] + c[5]), "faulty, under repair or missing", "/assets?flag=issues", "critical" if c[1] + c[5] else "good", "alert") }}
+  {{ kpi("Not yet in service", "{:,}".format(c[2] + c[3]), "in stock or in transit", "/assets?status=IN_STOCK", "info", "truck") }}
 </div>
 <form class="filters" method="get">
   <div class="field"><label for="q">Search</label><input id="q" type="search" name="q" value="{{ params.get('q', '') }}"></div>

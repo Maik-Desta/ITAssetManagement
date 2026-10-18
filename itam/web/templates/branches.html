@@ -1,8 +1,9 @@
 {% extends "base.html" %}
-{% from "macros.html" import branch_state %}
+{% from "macros.html" import branch_state, mix_bar %}
 {% block title %}Branches{% endblock %}
 {% block content %}
 <div class="page-head"><div><h1>Branches</h1><p>{{ branches | length }} sites</p></div></div>
+<div class="summary-band one"><section class="mix-card">{{ mix_bar(state_mix, "Monitoring state of the sites listed") }}</section></div>
 <form class="filters" method="get">
   <div class="field"><label for="q">Search</label><input id="q" type="search" name="q" value="{{ q }}" placeholder="Code, name, city"></div>
   <div class="field"><label for="region">Region</label><select id="region" name="region" data-autosubmit><option value="">All</option>

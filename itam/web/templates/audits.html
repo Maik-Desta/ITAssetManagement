@@ -1,12 +1,19 @@
 {% extends "base.html" %}
-{% from "macros.html" import csrf with context %}
+{% from "macros.html" import csrf, kpi, mix_bar with context %}
 {% block title %}Physical audits{% endblock %}
 {% block content %}
 <div class="page-head"><div><h1>Physical audits</h1><p>Quarterly cyclical audit of 25% of branches with the mobile scan · all branches covered each year</p></div></div>
-<div class="tiles">
-  <div class="tile"><div class="label">Branches audited this year</div><div class="value">{{ covered }} <small>/ {{ total }}</small></div>
-    <progress max="{{ total or 1 }}" value="{{ covered }}" aria-label="Coverage"></progress></div>
+<div class="kpi-grid kpi-grid-auto">
+  {{ kpi("Branches audited this year", covered, "of " ~ total ~ " · every branch once a year", None,
+         "good" if covered >= total else "info", "target", (covered, total), "/ " ~ total) }}
+  {{ kpi("Average accuracy", summary.accuracy if summary.accuracy is not none else "—", "completed audits this year · target ≥ 98%", "/audits?status=COMPLETED",
+         "good" if summary.accuracy and summary.accuracy >= 98 else "warning", "gauge", None, "%" if summary.accuracy is not none else "") }}
+  {{ kpi("Missing at audit", summary.missing, summary.unexpected ~ " unexpected items found", "/exceptions?status=OPEN&type=MISSING_DEVICE",
+         "critical" if summary.missing else "good", "search") }}
+  {{ kpi("Next audit", summary.next.scheduled_for | d if summary.next else "—",
+         (summary.next.branch.code ~ " " ~ summary.next.branch.name) if summary.next else "nothing scheduled", "/audits?status=SCHEDULED", "info", "clock") }}
 </div>
+<div class="summary-band one"><section class="mix-card">{{ mix_bar(status_mix, "Audits by status") }}</section></div>
 <div class="grid grid-main">
 <section class="card">
   <div class="tabs"><a href="/audits" class="{{ 'active' if not status }}">All</a>{% for s in ["SCHEDULED", "IN_PROGRESS", "COMPLETED"] %}<a href="/audits?status={{ s }}" class="{{ 'active' if status == s }}">{{ s.replace("_", " ").title() }}</a>{% endfor %}</div>

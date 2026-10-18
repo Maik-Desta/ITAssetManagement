@@ -24,7 +24,7 @@ from itam.services import NotFound, ServiceError
 from itam.services import audits as audit_svc
 from itam.services import integrations as int_svc
 from itam.services.discovery import resolve_exception
-from itam.web.deps import DB, CurrentUser, csrf_protect, get_or_404, opt_date, opt_int, redirect, render, require
+from itam.web.deps import DB, CurrentUser, csrf_protect, get_or_404, mix, opt_date, opt_int, redirect, render, require
 
 router = APIRouter(dependencies=[Depends(csrf_protect)])
 
@@ -50,8 +50,17 @@ def exception_list(request: Request, db: DB, user: CurrentUser, status: str = "O
         if e.status == ExceptionStatus.OPEN.value:
             days = (now - e.created_at).days
             ageing["0–7 d" if days <= 7 else "8–30 d" if days <= 30 else "> 30 d"] += 1
+    from itam.web.mixes import EXCEPTION_TONES
+
+    open_counts = dict(db.execute(select(ControlException.exception_type, func.count(ControlException.id)).where(
+        (ControlException.branch_id.in_(branch_ids)) | ControlException.branch_id.is_(None),
+        ControlException.status == ExceptionStatus.OPEN.value).group_by(ControlException.exception_type)).all())
+    spec = [(t.value, t.value.replace("_", " ").capitalize(), EXCEPTION_TONES.get(t.value, "info"))
+            for t in ExceptionType]
+    spec.sort(key=lambda s: -open_counts.get(s[0], 0))
+    type_mix = mix(open_counts, spec, "/exceptions?status=OPEN&type={key}", type)
     return render(request, "exceptions.html", user, rows=rows, status=status, type=type, source=source,
-                  types=list(ExceptionType), ageing=ageing, now=now)
+                  types=list(ExceptionType), ageing=ageing, now=now, type_mix=type_mix)
 
 
 @router.get("/exceptions/{eid}")
@@ -85,8 +94,25 @@ def audit_list(request: Request, db: DB, user: CurrentUser, status: str = ""):
         PhysicalAudit.status == AuditStatus.COMPLETED.value, PhysicalAudit.completed_at >= year_start)).scalar_one()
     total = db.execute(select(func.count(Branch.id))).scalar_one()
     branches = db.execute(scope_branches(user, select(Branch).order_by(Branch.code))).scalars().all()
+    from itam.web.mixes import AUDIT_STATUS
+
+    counts = dict(db.execute(select(PhysicalAudit.status, func.count(PhysicalAudit.id))
+                             .where(PhysicalAudit.branch_id.in_(branch_ids)).group_by(PhysicalAudit.status)).all())
+    done = db.execute(select(PhysicalAudit).where(PhysicalAudit.branch_id.in_(branch_ids),
+                                                  PhysicalAudit.status == AuditStatus.COMPLETED.value,
+                                                  PhysicalAudit.completed_at >= year_start)).scalars().all()
+    accuracies = [a.accuracy for a in done if a.accuracy is not None]
+    nxt = db.execute(select(PhysicalAudit).where(PhysicalAudit.branch_id.in_(branch_ids),
+                                                 PhysicalAudit.status == AuditStatus.SCHEDULED.value,
+                                                 PhysicalAudit.scheduled_for >= date.today())
+                     .order_by(PhysicalAudit.scheduled_for)).scalars().first()
+    summary = {"accuracy": round(sum(accuracies) / len(accuracies), 1) if accuracies else None,
+               "missing": sum(a.missing_count for a in done), "unexpected": sum(a.unexpected_count for a in done),
+               "next": nxt, "scheduled": counts.get(AuditStatus.SCHEDULED.value, 0),
+               "in_progress": counts.get(AuditStatus.IN_PROGRESS.value, 0)}
     return render(request, "audits.html", user, rows=rows, status=status, covered=covered, total=total,
-                  branches=branches, today=date.today())
+                  branches=branches, today=date.today(), summary=summary,
+                  status_mix=mix(counts, AUDIT_STATUS, "/audits?status={key}", status))
 
 
 @router.post("/audits/schedule-quarter")

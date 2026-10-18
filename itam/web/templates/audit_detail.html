@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "macros.html" import csrf, status_badge with context %}
+{% from "macros.html" import kpi, csrf, status_badge with context %}
 {% block title %}Audit #{{ audit.id }}{% endblock %}
 {% block content %}
 <div class="page-head"><div><h1>Physical audit #{{ audit.id }} · {{ audit.branch.code }} {{ audit.branch.name }}</h1>
@@ -8,12 +8,13 @@
   <form method="post" action="/audits/{{ audit.id }}/start">{{ csrf() }}<button class="btn primary" type="submit">Start audit</button></form>{% endif %}
 </div>
 {% if audit.status == "COMPLETED" %}
-<div class="tiles">
-  <div class="tile"><div class="label">Accuracy</div><div class="value">{{ audit.accuracy }}<small>%</small></div><div class="sub">target ≥ 98%</div></div>
-  <div class="tile"><div class="label">Found</div><div class="value">{{ audit.found_count }} <small>/ {{ audit.expected_count }}</small></div></div>
-  <div class="tile"><div class="label">Missing</div><div class="value">{{ audit.missing_count }}</div></div>
-  <div class="tile"><div class="label">Unexpected</div><div class="value">{{ audit.unexpected_count }}</div></div>
-  <div class="tile"><div class="label">Wrong location</div><div class="value">{{ audit.wrong_location_count }}</div></div>
+<div class="kpi-grid kpi-grid-auto">
+  {{ kpi("Accuracy", audit.accuracy if audit.accuracy is not none else "—", "target ≥ 98%", None,
+         "good" if audit.accuracy and audit.accuracy >= 98 else "warning", "gauge", None, "%" if audit.accuracy is not none else "") }}
+  {{ kpi("Found", audit.found_count, "of " ~ audit.expected_count ~ " expected", None, "good", "check", (audit.found_count, audit.expected_count or 1), "/ " ~ audit.expected_count) }}
+  {{ kpi("Missing", audit.missing_count, "not found at the branch", None, "critical" if audit.missing_count else "good", "search") }}
+  {{ kpi("Unexpected", audit.unexpected_count, "tags not registered here", None, "warning" if audit.unexpected_count else "good", "alert") }}
+  {{ kpi("Wrong location", audit.wrong_location_count, "found in another room", None, "warning" if audit.wrong_location_count else "good", "pin") }}
 </div>
 {% endif %}
 <div class="grid grid-main">

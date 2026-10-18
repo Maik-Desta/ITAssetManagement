@@ -283,3 +283,18 @@ def pct(num: float, den: float) -> int:
 
 TEMPLATES.env.globals.update(nice_max=nice_max, bar_path=bar_path, fmt_tick=fmt_tick, hbar_path=hbar_path,
                              compact=compact, pct=pct)
+
+
+def mix(counts: dict, spec: list[tuple[str, str, str]], href: str | None = None, active: str | None = None) -> dict:
+    """Segments for the status-distribution bar: spec = [(key, label, tone)], counts = {key: n}.
+
+    ``href`` is a format string with ``{key}`` for the click-through filter link."""
+    total = sum(counts.get(k, 0) for k, _, _ in spec)
+    x, segments = 0.0, []
+    for key, label, tone in spec:
+        n = counts.get(key, 0)
+        share = 100.0 * n / total if total else 0.0
+        segments.append({"key": key, "label": label, "tone": tone, "n": n, "pct": round(share), "x": round(x, 3),
+                         "w": round(share, 3), "href": href.format(key=key) if href else None, "active": key == active})
+        x += share
+    return {"total": total, "segments": segments}
