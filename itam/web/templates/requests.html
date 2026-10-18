@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Equipment requests{% endblock %}
 {% block content %}
-<div class="page-head"><div><h1>Equipment requests</h1><p>Request &amp; approve (IT + budget) → Procurement PO → receive &amp; tag at the central store → dispatch → install → go-live → custody sign-off</p></div>
+<div class="page-head"><div><h1>Equipment requests</h1><p>Request against the approved catalogue → approve (IT + budget) → PO → shipping notice → goods-in, RFID tag &amp; register → configure &amp; burn-in → ship → branch receipt → install → go-live → custody sign-off</p></div>
   {% if can(user, "request.create") %}<a class="btn primary" href="/requests/new">New request</a>{% endif %}</div>
 <div class="tabs"><a href="/requests" class="{{ 'active' if not status }}">All</a>
   {% for s in statuses %}<a href="/requests?status={{ s.value }}" class="{{ 'active' if status == s.value }}">{{ s.value.replace("_", " ").title() }}</a>{% endfor %}</div>
@@ -9,7 +9,7 @@
   <thead><tr><th>Reference</th><th>Branch</th><th>Item</th><th class="num">Qty</th><th>Status</th><th>Requested by</th><th>Created</th></tr></thead>
   <tbody>{% for r in rows %}
   <tr><td><a href="/requests/{{ r.id }}">{{ r.reference }}</a></td><td>{{ r.branch.code }} {{ r.branch.name }}</td>
-    <td>{{ TYPE_LABELS[r.asset_type] }}{% if r.model %} · {{ r.model.display }}{% endif %}</td><td class="num">{{ r.received_quantity }}/{{ r.quantity }}</td>
+    <td>{{ TYPE_LABELS[r.asset_type] }}{% if r.model %} · {{ r.model.display }}{% endif %}{% if r.outside_blueprint %} <span class="badge"><span class="dot warning"></span>outside blueprint</span>{% endif %}</td><td class="num">{{ r.received_quantity }}/{{ r.quantity }}</td>
     <td>{{ r.status.replace("_", " ").title() }}</td><td>{{ r.requester.full_name }}</td><td class="nowrap">{{ r.created_at | dt("%Y-%m-%d") }}</td></tr>
   {% else %}<tr><td colspan="7" class="muted">No requests.</td></tr>{% endfor %}</tbody></table></div></section>
 {% endblock %}

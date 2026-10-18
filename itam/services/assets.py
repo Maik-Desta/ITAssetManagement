@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from itam import auditlog
 from itam.enums import (
+    MIN_BURN_IN_HOURS,
     NETWORK_TYPES,
     STATUS_LABELS,
     AssetStatus,
@@ -18,7 +19,7 @@ from itam.enums import (
     OperState,
 )
 from itam.models import Asset, AssetHistory, AssetModel, Branch, Contract, Location, User, utcnow
-from itam.numbering import extract_asset_number, next_asset_number
+from itam.numbering import decode_epc, encode_epc, extract_asset_number, next_asset_number
 from itam.rbac import Role, acts_for_branch, can
 from itam.services import NotFound, PermissionDenied, ServiceError
 
@@ -58,8 +59,17 @@ def get_asset(db: Session, asset_id: int) -> Asset:
 
 
 def find_by_number(db: Session, value: str) -> Asset | None:
-    number = extract_asset_number(value)
+    """Accept an asset number, a QR payload, or an RFID EPC read by a handheld."""
+    number = decode_epc(value) or extract_asset_number(value)
     return db.execute(select(Asset).where(Asset.asset_number == number)).scalar_one_or_none()
+
+
+def find_by_epc(db: Session, epc: str) -> Asset | None:
+    epc = (epc or "").strip().upper()
+    found = db.execute(select(Asset).where(Asset.rfid_epc == epc)).scalar_one_or_none()
+    if found is None and (number := decode_epc(epc)):
+        found = db.execute(select(Asset).where(Asset.asset_number == number)).scalar_one_or_none()
+    return found
 
 
 def add_history(db: Session, asset: Asset, actor: User | None, event: str, detail: str | None = None,
@@ -134,18 +144,22 @@ def register_asset(db: Session, actor: User, *, branch: Branch, asset_type: str,
         asset_number=number, serial_number=serial_number, asset_type=asset_type, model_id=model_id,
         branch_id=branch.id, status=initial_status.value, criticality=criticality, request_id=request_id,
         received_date=fields.pop("received_date", None) or date.today(),
-        tag_applied_at=now if tag_applied else None, oper_state=OperState.UNKNOWN.value,
+        tag_applied_at=now if tag_applied else None, rfid_epc=encode_epc(number), oper_state=OperState.UNKNOWN.value,
         install_checklist={}, last_metrics={}, created_at=now, updated_at=now, **fields,
     )
     if initial_status == S.ACTIVE:
+        # Baseline onboarding on 'branch day': the label is applied and verified with a handheld sweep on site.
+        # New stock is verified separately by the registration bench's verify read.
+        asset.rfid_verified_at = now if tag_applied else None
         asset.install_date = asset.install_date or date.today()
         asset.go_live_verified_at = now
         asset.monitored = asset_type in NETWORK_TYPES
     db.add(asset)
     db.flush()
-    add_history(db, asset, actor, "REGISTERED", f"Registered at {branch.code} {branch.name}", None, asset.status)
+    add_history(db, asset, actor, "REGISTERED", f"Registered at {branch.code} {branch.name}; RFID EPC {asset.rfid_epc}",
+                None, asset.status)
     auditlog.record(db, actor, "asset.register", "asset", number, serial=serial_number, type=asset_type,
-                    branch=branch.code, status=asset.status)
+                    branch=branch.code, status=asset.status, epc=asset.rfid_epc)
     return asset
 
 
@@ -262,9 +276,55 @@ def accept_custody(db: Session, actor: User, asset: Asset) -> Asset:
 
 
 def mark_tag_applied(db: Session, actor: User, asset: Asset) -> Asset:
+    """Retrofit / re-label: RFID + QR label encoded, applied and verified by a read (slide 54, 'branch day')."""
     if not (can(actor, "asset.install") or can(actor, "asset.register")):
         raise PermissionDenied("Not permitted")
-    asset.tag_applied_at = utcnow()
-    add_history(db, asset, actor, "TAG_APPLIED", "Tamper-evident QR tag applied / verified")
-    auditlog.record(db, actor, "asset.tag", "asset", asset.asset_number)
+    now = utcnow()
+    asset.tag_applied_at = now
+    if not asset.rfid_epc:
+        asset.rfid_epc = encode_epc(asset.asset_number)
+    asset.rfid_verified_at = now
+    add_history(db, asset, actor, "TAG_APPLIED", f"Tamper-evident RFID + QR label applied and verified (EPC {asset.rfid_epc})")
+    auditlog.record(db, actor, "asset.tag", "asset", asset.asset_number, epc=asset.rfid_epc)
     return asset
+
+
+def verify_rfid(db: Session, actor: User | None, asset: Asset, epc: str, where: str = "registration bench") -> Asset:
+    """Verify read after encoding: the tag must carry this asset's EPC."""
+    epc = (epc or "").strip().upper()
+    if epc != asset.rfid_epc:
+        raise ServiceError(f"Tag read {epc or '(none)'} does not match {asset.asset_number} (expected {asset.rfid_epc})")
+    asset.rfid_verified_at = utcnow()
+    add_history(db, asset, actor, "RFID_VERIFIED", f"RFID tag verified at {where}")
+    auditlog.record(db, actor, "asset.rfid_verify", "asset", asset.asset_number, epc=epc, where=where)
+    return asset
+
+
+def record_staging(db: Session, actor: User, asset: Asset, *, config_backup_ref: str, burn_in_hours: int,
+                   checklist: dict[str, bool] | None = None) -> Asset:
+    """Configure & burn-in at central staging (slide 27): golden config, firmware, SNMPv3, NTP; 24-48 h burn-in."""
+    if not can(actor, "asset.register"):
+        raise PermissionDenied("Only the ITAM Office (staging) can record configuration and burn-in")
+    if asset.status != S.IN_STOCK.value or asset.install_date:
+        raise ServiceError("Only new stock at the staging centre can be staged")
+    if asset.asset_type in NETWORK_TYPES:
+        missing = [label for key, label in INSTALL_CHECKLIST.items() if not (checklist or {}).get(key)]
+        if missing:
+            raise ServiceError("Golden configuration incomplete: " + "; ".join(missing))
+        if not (config_backup_ref or "").strip():
+            raise ServiceError("Config backup reference is required")
+    if burn_in_hours < MIN_BURN_IN_HOURS:
+        raise ServiceError(f"Burn-in must be at least {MIN_BURN_IN_HOURS} hours")
+    asset.config_backup_ref = (config_backup_ref or "").strip() or None
+    asset.burn_in_hours = burn_in_hours
+    asset.staged_at = utcnow()
+    add_history(db, asset, actor, "STAGED", f"Staged – ready: config {asset.config_backup_ref or 'n/a'}, "
+                                             f"burn-in {burn_in_hours} h")
+    auditlog.record(db, actor, "asset.staged", "asset", asset.asset_number, config_backup_ref=asset.config_backup_ref,
+                    burn_in_hours=burn_in_hours)
+    return asset
+
+
+def is_staged_ready(asset: Asset) -> bool:
+    """Network-managed kit must pass configuration and burn-in before it leaves staging."""
+    return asset.asset_type not in NETWORK_TYPES or asset.staged_at is not None

@@ -60,7 +60,8 @@ def request_detail(request: Request, db: DB, user: CurrentUser, rid: int):
         raise NotFound("Request not found")
     received = db.execute(select(Asset).where(Asset.request_id == req.id).order_by(Asset.id)).scalars().all()
     contracts = db.execute(select(Contract).order_by(Contract.reference)).scalars().all()
-    return render(request, "request_detail.html", user, req=req, received=received, contracts=contracts)
+    return render(request, "request_detail.html", user, req=req, received=received, contracts=contracts,
+                  asn=req_svc.shipping_notice(db, req))
 
 
 @router.post("/requests/{rid}/approve")
@@ -85,6 +86,17 @@ def request_po(request: Request, db: DB, user: CurrentUser, rid: int, po_number:
     return redirect(f"/requests/{req.id}", "Purchase order recorded.", request)
 
 
+@router.post("/requests/{rid}/asn")
+def request_asn(request: Request, db: DB, user: CurrentUser, rid: int, asn_ref: str = Form(...), serials: str = Form(...),
+                eta: str = Form("")):
+    from itam.web.deps import opt_date
+
+    req = get_or_404(db, EquipmentRequest, rid, "Request")
+    asn = req_svc.record_shipping_notice(db, user, req, asn_ref, serials.replace(",", "\n").splitlines(), opt_date(eta))
+    return redirect(f"/requests/{req.id}", f"Shipping notice {asn.asn_ref} recorded: {len(asn.serials)} item(s) on order.",
+                    request)
+
+
 @router.post("/requests/{rid}/receive")
 def request_receive(request: Request, db: DB, user: CurrentUser, rid: int, serials: str = Form(...),
                     unit_cost: str = Form("")):
@@ -92,7 +104,8 @@ def request_receive(request: Request, db: DB, user: CurrentUser, rid: int, seria
     created = req_svc.receive(db, user, req, serials.replace(",", "\n").splitlines(), opt_float(unit_cost))
     ids = ",".join(str(a.id) for a in created)
     return redirect(f"/requests/{req.id}?labels={ids}",
-                    f"Received {len(created)} item(s) into the central store. Print the QR tags.", request)
+                    f"Received {len(created)} item(s) into the central store. Print the RFID + QR labels and verify "
+                    f"each tag at the registration bench.", request)
 
 
 # --- Change requests --------------------------------------------------------------

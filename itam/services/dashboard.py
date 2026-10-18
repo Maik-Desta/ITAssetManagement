@@ -212,7 +212,8 @@ def kpis(db: Session) -> list[dict]:
     cov_all = _pct(sum(1 for a in in_scope if a.monitored), len(in_scope))
     cov_crit = _pct(sum(1 for a in critical if a.monitored), len(critical))
 
-    tagged = _pct(sum(1 for a in live_assets if a.tag_applied_at), len(live_assets))
+    # A valid tag is an RFID + QR label applied and verified by a read.
+    tagged = _pct(sum(1 for a in live_assets if a.tag_applied_at and a.rfid_verified_at), len(live_assets))
 
     outages = db.execute(select(Alert).where(Alert.category.in_([c.value for c in OUTAGE_CATEGORIES]),
                                              Alert.detected_at >= month_ago)).scalars().all()
@@ -221,7 +222,8 @@ def kpis(db: Session) -> list[dict]:
     mttd = round(mean(mttd_vals), 1) if mttd_vals else None
     proactive = _pct(len(monitored_outages), len(outages))
 
-    missing = sum(1 for a in live_assets if a.status == AssetStatus.MISSING.value)
+    missing = sum(1 for a in live_assets if a.status == AssetStatus.MISSING.value or a.suspected_removal_at)
+    rfid = rfid_kpis(db, live_assets)
 
     excs = db.execute(select(ControlException).where(ControlException.created_at >= year_ago)).scalars().all()
     due_excs = [e for e in excs if e.status == ExceptionStatus.RESOLVED.value or now - e.created_at > timedelta(days=30)]
@@ -258,8 +260,8 @@ def kpis(db: Session) -> list[dict]:
             "< 5 minutes", None if mttd is None else mttd < 5, "CIO / NOC"),
         row("Proactive detection rate", "Outages found by monitoring before user reports (30 days)", proactive,
             fmt(proactive), "≥ 90%", ge(proactive, 90), "CIO / NOC"),
-        row("Unexplained removals", "Missing assets without approved change", missing, str(missing), "0",
-            missing == 0, "CISO, Internal Audit"),
+        row("Unexplained removals", "Missing or suspected-removal assets without approved change", missing,
+            str(missing), "0", missing == 0, "CISO, Internal Audit"),
         row("Audit exception closure", "Exceptions closed within 30 days", closure, fmt(closure), "≥ 95%",
             ge(closure, 95), "Internal Audit"),
         row("Warranty / EOL visibility", "Assets with warranty and EOL dates recorded", warranty_vis,
@@ -268,7 +270,45 @@ def kpis(db: Session) -> list[dict]:
             f"{fmt(on_time_pct)} on time; {fmt(variance)} budget", "≥ 90%; < 10%",
             None if on_time_pct is None else (on_time_pct >= 90 and (variance is None or variance < 10)),
             "Steering Committee"),
+        # RFID implementation targets (slide 54) and the standard branch blueprint (slides 9, 26).
+        row("New assets RFID-tagged at staging", "Shipped items with a verified RFID tag before leaving staging",
+            rfid["tagged_at_staging"], fmt(rfid["tagged_at_staging"]), "100%", ge(rfid["tagged_at_staging"], 100),
+            "Programme Board"),
+        row("Portal read rate", "Shipped items read by the dispatch exit portal", rfid["portal_read_rate"],
+            fmt(rfid["portal_read_rate"]), "≥ 99%", ge(rfid["portal_read_rate"], 99), "Programme Board"),
+        row("Installed without manifest match", "Shipped assets installed without a matched branch receipt",
+            rfid["unmatched_installs"], str(rfid["unmatched_installs"]), "0", rfid["unmatched_installs"] == 0,
+            "CISO, Internal Audit"),
+        row("Existing assets retrofitted", "Assets in service with a verified RFID + QR label", rfid["retrofitted"],
+            fmt(rfid["retrofitted"]), "100% by end of Wave 3", ge(rfid["retrofitted"], 100), "Programme Board"),
+        row("Blueprint compliance", "Rolled-out branches with only standard, approved kit and no unapproved devices",
+            rfid["blueprint"], fmt(rfid["blueprint"]), "100%", ge(rfid["blueprint"], 100), "CIO, CISO"),
     ]
+
+
+def rfid_kpis(db: Session, live_assets: list[Asset] | None = None) -> dict:
+    from itam.enums import ShipmentItemResult
+    from itam.models import Branch, Shipment, ShipmentItem
+    from itam.services.catalogue import branch_compliance
+
+    if live_assets is None:
+        live_assets = db.execute(select(Asset).where(Asset.status != AssetStatus.DISPOSED.value)).scalars().all()
+    shipped = db.execute(select(ShipmentItem).join(Shipment).where(Shipment.dispatched_at.is_not(None))).scalars().all()
+    tagged_at_staging = _pct(sum(1 for i in shipped if i.asset.rfid_verified_at
+                                 and i.asset.rfid_verified_at <= i.shipment.dispatched_at), len(shipped))
+    portal = _pct(sum(1 for i in shipped if i.dispatch_read_at), len(shipped))
+    last_item: dict[int, ShipmentItem] = {}
+    for i in shipped:
+        if i.asset_id not in last_item or i.id > last_item[i.asset_id].id:
+            last_item[i.asset_id] = i
+    unmatched = sum(1 for i in last_item.values()
+                    if i.asset.install_date and i.result != ShipmentItemResult.MATCHED.value)
+    in_service = [a for a in live_assets if a.status in INSTALLED]
+    retrofitted = _pct(sum(1 for a in in_service if a.rfid_verified_at), len(in_service))
+    rows = [r for r in branch_compliance(db, db.execute(select(Branch)).scalars().all()) if r["started"]]
+    blueprint = _pct(sum(1 for r in rows if r["compliant"]), len(rows))
+    return {"tagged_at_staging": tagged_at_staging, "portal_read_rate": portal, "unmatched_installs": unmatched,
+            "retrofitted": retrofitted, "blueprint": blueprint}
 
 
 # ---------------------------------------------------------------------------

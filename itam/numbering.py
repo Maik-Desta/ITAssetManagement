@@ -61,3 +61,70 @@ def extract_asset_number(scanned: str) -> str:
     text = (scanned or "").strip().upper()
     match = re.search(r"[A-Z]{2}-[A-Z]{3}-\d{4}-[A-Z]{3}-\d{5}", text)
     return match.group(0) if match else text
+
+
+# ---------------------------------------------------------------------------
+# RFID tag encoding (slide 54: "tag encoding scheme ↔ asset number")
+# ---------------------------------------------------------------------------
+#
+# A 96-bit EPC (EPC Gen2 / ISO 18000-63 user-defined) that encodes the asset number itself, so a read can be
+# resolved offline and a tag cannot silently point at another record:
+#
+#   header 8 | CC 2×5 | RRR 3×5 | BBBB 14 | TTT 3×5 | NNNNN 17 | reserved 1 | CRC-16 16   = 96 bits
+#
+# Letters are stored as A=0 … Z=25. The CRC covers the first 80 bits.
+
+EPC_HEADER = 0xB5
+
+
+def _crc16(value: int, nbits: int) -> int:
+    crc = 0xFFFF
+    for byte in value.to_bytes(nbits // 8, "big"):
+        crc ^= byte << 8
+        for _ in range(8):
+            crc = ((crc << 1) ^ 0x1021) if crc & 0x8000 else (crc << 1)
+            crc &= 0xFFFF
+    return crc
+
+
+def _letters(text: str) -> int:
+    value = 0
+    for ch in text:
+        value = (value << 5) | (ord(ch) - 65)
+    return value
+
+
+def _unletters(value: int, count: int) -> str:
+    return "".join(chr(((value >> (5 * (count - 1 - i))) & 0x1F) + 65) for i in range(count))
+
+
+def encode_epc(asset_number: str) -> str:
+    """Asset number → 24 hex-character EPC."""
+    parts = parse_asset_number(asset_number)
+    if not parts:
+        raise NumberingError(f"Not a valid asset number: {asset_number}")
+    body = EPC_HEADER
+    for bits, value in ((10, _letters(parts["cc"])), (15, _letters(parts["rrr"])), (14, int(parts["bbbb"])),
+                        (15, _letters(parts["ttt"])), (17, int(parts["nnnnn"])), (1, 0)):
+        body = (body << bits) | value
+    return f"{(body << 16) | _crc16(body, 80):024X}"
+
+
+def decode_epc(epc: str) -> str | None:
+    """EPC → asset number, or None if the tag is not one of ours (wrong header, length or checksum)."""
+    text = (epc or "").strip().replace(" ", "").upper()
+    if len(text) != 24 or any(ch not in "0123456789ABCDEF" for ch in text):
+        return None
+    value = int(text, 16)
+    body, crc = value >> 16, value & 0xFFFF
+    if body >> 72 != EPC_HEADER or _crc16(body, 80) != crc:
+        return None
+    nnnnn = (body >> 1) & 0x1FFFF
+    ttt = (body >> 18) & 0x7FFF
+    bbbb = (body >> 33) & 0x3FFF
+    rrr = (body >> 47) & 0x7FFF
+    cc = (body >> 62) & 0x3FF
+    try:
+        return format_asset_number(_unletters(cc, 2), _unletters(rrr, 3), f"{bbbb:04d}", _unletters(ttt, 3), nnnnn)
+    except NumberingError:
+        return None

@@ -176,6 +176,42 @@ def collector_toggle(request: Request, db: DB, user: CurrentUser, cid: int):
     return redirect("/admin/collectors", f"Collector {c.name} {'enabled' if c.is_active else 'disabled'}.", request)
 
 
+# --- RFID read points (slides 20, 29) ---------------------------------------------------------------
+
+
+@router.get("/read-points")
+def read_points(request: Request, db: DB, user: CurrentUser):
+    from itam.enums import READ_POINT_LABELS, ReadPointKind
+    from itam.models import ReadPoint
+
+    require(user, "readpoints.manage")
+    rows = db.execute(select(ReadPoint).order_by(ReadPoint.branch_id, ReadPoint.code)).scalars().all()
+    branches = db.execute(select(Branch).order_by(Branch.code)).scalars().all()
+    return render(request, "admin_read_points.html", user, rows=rows, branches=branches, kinds=list(ReadPointKind),
+                  kind_labels={k.value: v for k, v in READ_POINT_LABELS.items()})
+
+
+@router.post("/read-points")
+def read_point_create(request: Request, db: DB, user: CurrentUser, code: str = Form(...), name: str = Form(...),
+                      kind: str = Form(...), branch_id: int = Form(...), camera_ref: str = Form("")):
+    from itam.services import rfid as rfid_svc
+
+    branch = get_or_404(db, Branch, branch_id, "Branch")
+    rp = rfid_svc.create_read_point(db, user, code=code, name=name, kind=kind, branch=branch, camera_ref=camera_ref)
+    return redirect("/admin/read-points", f"Read point {rp.code} registered.", request)
+
+
+@router.post("/read-points/{rid}/toggle")
+def read_point_toggle(request: Request, db: DB, user: CurrentUser, rid: int):
+    from itam.models import ReadPoint
+
+    require(user, "readpoints.manage")
+    rp = get_or_404(db, ReadPoint, rid, "Read point")
+    rp.is_active = not rp.is_active
+    auditlog.record(db, user, "readpoint.toggle", "read_point", rp.code, active=rp.is_active)
+    return redirect("/admin/read-points", f"{rp.code} {'enabled' if rp.is_active else 'disabled'}.", request)
+
+
 # --- Reference data ------------------------------------------------------------------------------
 
 

@@ -36,7 +36,7 @@ from itam.models import (
     utcnow,
 )
 from itam.notifications import notify_roles
-from itam.numbering import extract_asset_number
+from itam.numbering import decode_epc, extract_asset_number
 from itam.rbac import Role, acts_for_branch, can
 from itam.services import PermissionDenied, ServiceError
 from itam.services.discovery import raise_exception
@@ -130,7 +130,7 @@ def scan(db: Session, actor: User, audit: PhysicalAudit, scanned: str, location_
     _check_auditor(actor, audit)
     if audit.status != AuditStatus.IN_PROGRESS.value:
         raise ServiceError("Audit is not in progress")
-    number = extract_asset_number(scanned)
+    number = decode_epc(scanned) or extract_asset_number(scanned)  # QR payload or handheld RFID EPC
     if not number:
         raise ServiceError("Nothing scanned")
     now = utcnow()

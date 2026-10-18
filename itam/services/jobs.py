@@ -14,7 +14,9 @@ from itam.db import session_scope
 from itam.models import JobRun, utcnow
 from itam.notifications import deliver_queued
 from itam.services.discovery import detect_missing, weekly_exception_report
+from itam.services.logistics import overdue_shipments
 from itam.services.monitoring import check_collectors, escalate_overdue, warranty_and_eol_alerts
+from itam.services.security import check_readers
 
 log = logging.getLogger(__name__)
 
@@ -29,11 +31,15 @@ class Job:
 
 JOBS: list[Job] = [
     Job("escalate_alerts", timedelta(minutes=1), lambda db: escalate_overdue(db),
-        "Escalate unacknowledged alerts (engineer → regional lead → Head of Infra → CIO)"),
+        "Escalate unacknowledged alerts (engineer → regional lead → Head of Infra → CIO); security alarms every 5 min"),
     Job("deliver_notifications", timedelta(minutes=1), lambda db: deliver_queued(db),
         "Send queued e-mail / SMS / chat notifications"),
     Job("check_collectors", timedelta(minutes=5), lambda db: check_collectors(db),
         "Alert when a regional collector stops reporting"),
+    Job("check_readers", timedelta(minutes=5), lambda db: check_readers(db),
+        "Alert when a fixed RFID reader stops reporting (offline or tampered)"),
+    Job("overdue_shipments", timedelta(minutes=15), lambda db: overdue_shipments(db),
+        "Alert the ITAM Office and Security when a delivery is past its ETA"),
     Job("detect_missing", timedelta(minutes=15), lambda db: detect_missing(db),
         "Mark devices not seen for > 72 h without approved change as Missing"),
     Job("warranty_eol", timedelta(days=1), lambda db: warranty_and_eol_alerts(db),

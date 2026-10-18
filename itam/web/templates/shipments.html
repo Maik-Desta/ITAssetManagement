@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% from "macros.html" import simple_badge with context %}
+{% block title %}Shipments{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>Staging &amp; shipments</h1><p>Pick &amp; pack against the branch install order → tag manifest and tamper seal → exit-portal read sets 'In transit' → handheld read at the branch, seal check and custody sign-off</p></div>
+  {% if can(user, "shipment.manage") %}<a class="btn primary" href="/shipments/new">Pack shipment</a>{% endif %}</div>
+<div class="tabs"><a href="/shipments" class="{{ 'active' if not status }}">All</a>
+  {% for st in statuses %}<a href="/shipments?status={{ st.value }}" class="{{ 'active' if status == st.value }}">{{ st.value.replace("_", " ").title() }}</a>{% endfor %}</div>
+<section class="card"><div class="table-wrap"><table>
+  <thead><tr><th>Reference</th><th>From → to</th><th class="num">Items</th><th>Seal</th><th>Carrier</th><th>ETA</th><th>Status</th></tr></thead>
+  <tbody>{% for s in rows %}
+  {% set late = s.status == "IN_TRANSIT" and s.eta and s.eta < now %}
+  <tr><td><a href="/shipments/{{ s.id }}">{{ s.reference }}</a></td><td>{{ s.from_branch.code }} → {{ s.to_branch.code }} {{ s.to_branch.name }}</td>
+    <td class="num">{{ s.items | length }}</td><td class="mono small">{{ s.seal_number }}</td><td>{{ s.carrier or "—" }}</td>
+    <td class="nowrap">{{ s.eta | dt if s.eta else "—" }}</td>
+    <td>{{ simple_badge(s.status.replace("_", " ").title() ~ (" · overdue" if late else ""), "critical" if s.status == "VARIANCE" or late else "good" if s.status == "DELIVERED" else "info" if s.status == "IN_TRANSIT" else "") }}</td></tr>
+  {% else %}<tr><td colspan="7" class="muted">No shipments.</td></tr>{% endfor %}</tbody></table></div></section>
+{% endblock %}

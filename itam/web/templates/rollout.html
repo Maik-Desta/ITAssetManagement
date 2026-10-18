@@ -2,7 +2,7 @@
 {% from "macros.html" import csrf with context %}
 {% block title %}Rollout & gates{% endblock %}
 {% block content %}
-<div class="page-head"><div><h1>Rollout &amp; decision gates</h1><p>12-month programme · 4 field teams × 2 branches/week ≈ 8 branches per week · {{ live_last_week }} branch(es) went live in the last 7 days</p></div></div>
+<div class="page-head"><div><h1>Rollout &amp; decision gates</h1><p>~15-month programme, 5 phases, 5 go / no-go gates · 4 field teams × 2 branches/week ≈ 8 branches per week · {{ live_last_week }} branch(es) went live in the last 7 days</p></div></div>
 <div class="tiles">{% for w in waves %}
   <div class="tile"><div class="label">{{ w.label }}</div><div class="value">{{ w.live }} <small>/ {{ w.total }} live</small></div>
     <progress max="{{ w.total or 1 }}" value="{{ w.live }}" aria-label="{{ w.label }} progress"></progress><div class="sub">{{ w.in_progress }} in progress</div></div>
@@ -29,4 +29,15 @@
   {% endfor %}</tbody></table></div>
 </section>
 </div>
+<section class="card">
+  <h2>Operating model: who operates each automated stage</h2>
+  <p class="small secondary">{{ model_labels[operating_model] }}{% if operating_model.value == "SISTER_COMPANY" %} · operator: {{ operator_name }}{% endif %}.
+    The Bank always keeps governance and ITAM policy, order approvals and budget, data ownership and audit rights, and an exit plan.
+    Only the operator of each step changes between options; the automated flow is the same.</p>
+  <div class="table-wrap"><table><thead><tr><th>Stage</th>{% for m, label in model_labels.items() %}<th class="{{ 'current' if m == operating_model }}">{{ label.split(" — ")[1] | capitalize }}{% if m == operating_model %} (selected){% endif %}</th>{% endfor %}</tr></thead><tbody>
+  {% for stage, _ in stages %}{% set i = loop.index0 %}<tr><td>{{ loop.index }} {{ stage }}</td>
+    {% for m in model_labels %}<td class="{{ 'strong' if m == operating_model }}">{% if m == operating_model %}<strong>{{ all_operators[m][i] }}</strong>{% else %}{{ all_operators[m][i] }}{% endif %}</td>{% endfor %}</tr>
+  {% endfor %}</tbody></table></div>
+  <p class="small muted">Set with ITAM_OPERATING_MODEL (IN_HOUSE, SISTER_COMPANY, OUTSOURCED). If the regulator requires it, the sister company runs the asset lifecycle and the Bank NOC keeps real-time monitoring.</p>
+</section>
 {% endblock %}

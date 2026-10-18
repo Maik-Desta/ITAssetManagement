@@ -4,6 +4,7 @@
 {% block content %}
 <div class="page-head"><div><h1>{{ req.reference }} · {{ req.quantity }} × {{ TYPE_LABELS[req.asset_type] }}</h1>
   <p>For {{ req.branch.code }} {{ req.branch.name }} · {{ req.status.replace("_", " ").title() }}</p></div></div>
+{% if req.outside_blueprint %}<div class="callout">Outside the standard branch blueprint for {{ req.branch.code }}: IT approval must come from the Design Authority (Head of Infrastructure or CIO).</div><br>{% endif %}
 <div class="steps">{% set order = ["PENDING_APPROVAL", "APPROVED", "ORDERED", "RECEIVED"] %}
   {% for st in order %}<span class="{{ 'current' if st == req.status else 'done' if req.status in order and loop.index0 < order.index(req.status) }}">{{ ["1–2 Request & approve", "Approved", "3 Procure (PO)", "4 Received & tagged"][loop.index0] }}</span>{% endfor %}
   {% if req.status == "REJECTED" %}<span class="current">Rejected</span>{% endif %}</div>
@@ -17,6 +18,8 @@
     <dt>IT approval</dt><dd>{{ (req.it_approver.full_name ~ " · " ~ (req.it_approved_at | dt)) if req.it_approved_at else "pending" }}</dd>
     <dt>Budget approval</dt><dd>{{ (req.budget_approver.full_name ~ " · " ~ (req.budget_approved_at | dt)) if req.budget_approved_at else "pending" }}</dd>
     <dt>PO / supplier</dt><dd>{{ req.po_number or "—" }} · {{ req.supplier or "—" }}</dd>
+    {% if asn %}<dt>Shipping notice</dt><dd>{{ asn.asn_ref }}{% if asn.eta %} · ETA {{ asn.eta | d }}{% endif %} · {{ asn.received_serials | length }}/{{ asn.serials | length }} received
+      {% if asn.outstanding %}<div class="small secondary">On order: <span class="mono">{{ asn.outstanding | join(", ") }}</span></div>{% endif %}</dd>{% endif %}
     {% if req.rejection_reason %}<dt>Rejected</dt><dd>{{ req.rejection_reason }}</dd>{% endif %}
   </dl>
 </section>
@@ -37,19 +40,31 @@
         <div class="field"><label for="sup">Supplier</label><input id="sup" name="supplier" required></div>
         <div class="field"><label for="con">Warranty contract</label><select id="con" name="contract_id"><option value="">—</option>{% for c in contracts %}<option value="{{ c.id }}">{{ c.reference }} · {{ c.supplier }}</option>{% endfor %}</select></div></div>
       <button class="btn primary" type="submit">Record PO</button></form>
-  {% elif req.status == "ORDERED" and can(user, "request.receive") %}
-    <h2>Receive &amp; tag</h2>
-    <p class="small secondary">Check goods against the PO. One serial number per line; an asset number is issued for each and the record is created 'In stock' at the central store.</p>
+  {% elif req.status == "ORDERED" and (can(user, "request.receive") or can(user, "request.procure")) %}
+    {% if not asn and (can(user, "request.procure") or can(user, "request.receive")) %}
+    <h2>Shipping notice</h2>
+    <p class="small secondary">The vendor's shipping notice (ASN) with serials creates the expected records; goods-in is matched against it.</p>
+    <form method="post" action="/requests/{{ req.id }}/asn" class="stack">{{ csrf() }}
+      <div class="form-grid"><div class="field"><label for="asn">ASN reference</label><input id="asn" name="asn_ref" required></div>
+        <div class="field"><label for="eta">ETA at staging</label><input id="eta" name="eta" type="date"></div></div>
+      <textarea name="serials" required placeholder="Serial numbers on the notice, one per line"></textarea>
+      <button class="btn" type="submit">Record shipping notice</button></form>
+    {% endif %}
+    {% if can(user, "request.receive") %}
+    <h2>Goods-in: receive &amp; tag</h2>
+    <p class="small secondary">Scan the serials at the goods-in dock. Each is checked against the PO{% if asn %} and shipping notice {{ asn.asn_ref }}; anything not on the notice is held and an exception opened{% endif %}. An asset number is issued, the RFID + QR label encoded, and the record created 'In stock' at the central store.</p>
     <form method="post" action="/requests/{{ req.id }}/receive" class="stack">{{ csrf() }}
       <textarea name="serials" required placeholder="Serial numbers, one per line ({{ req.quantity - req.received_quantity }} outstanding)"></textarea>
       <div class="field"><label for="uc">Unit cost</label><input id="uc" name="unit_cost" type="number" step="0.01"></div>
       <button class="btn primary" type="submit">Receive</button></form>
+    {% endif %}
   {% else %}<p class="muted small">No action required from you.</p>{% endif %}
   {% if received %}
   <h2>Received assets</h2>
   <table><tbody>{% for a in received %}<tr><td><a class="mono" href="/assets/{{ a.id }}">{{ a.asset_number }}</a></td><td class="mono small">{{ a.serial_number }}</td><td>{{ status_badge(a.status) }}</td><td>{{ a.branch.code }}</td></tr>{% endfor %}</tbody></table>
-  <p><a class="btn" href="/labels?ids={{ received | map(attribute='id') | join(',') }}">Print QR tags</a>
-    <span class="small muted">Next: raise a transfer from the central store to {{ req.branch.code }} on each asset.</span></p>
+  <p><a class="btn" href="/labels?ids={{ received | map(attribute='id') | join(',') }}">Print RFID + QR labels</a>
+    {% if can(user, "shipment.manage") %}<a class="btn" href="/shipments/new?to={{ req.branch.id }}">Pack shipment to {{ req.branch.code }}</a>{% endif %}
+    <span class="small muted">Next: verify each tag, configure &amp; burn in network kit, then pack and dispatch to {{ req.branch.code }}.</span></p>
   {% endif %}
 </section>
 </div>

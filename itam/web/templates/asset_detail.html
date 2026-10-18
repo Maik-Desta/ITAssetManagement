@@ -12,6 +12,7 @@
     {% if can(user, "change.create") and allowed_changes and not open_change %}<a class="btn primary" href="/changes/new?asset_id={{ asset.id }}">Raise move / change</a>{% endif %}
   </div>
 </div>
+{% if asset.suspected_removal_at %}<div class="flash error" role="alert">Suspected removal: this asset was read at an exit or went missing from its cabinet at {{ asset.suspected_removal_at | dt }} with no approved ticket. See the security alert below.</div>{% endif %}
 {% if open_change %}<div class="callout">Open change <a href="/changes/{{ open_change.id }}">{{ open_change.reference }}</a> — {{ CHANGE_LABELS[open_change.change_type] }} ({{ open_change.status.replace("_", " ").lower() }}).</div><br>{% endif %}
 
 <div class="grid grid-main">
@@ -35,7 +36,7 @@
       <dt>Warranty end</dt><dd>{{ asset.effective_warranty_end | d }}{% if asset.contract %} <span class="muted small">{{ asset.contract.reference }}</span>{% endif %}</dd>
       <dt>EOL / EOS</dt><dd>{{ asset.eol_date | d }} / {{ asset.eos_date | d }}</dd>
       <dt>Cost / FA no.</dt><dd>{{ "{:,.2f}".format(asset.purchase_cost) if asset.purchase_cost else "—" }} · {{ asset.finance_asset_ref or "—" }}</dd>
-      <dt>Tag</dt><dd>{{ ("applied " ~ (asset.tag_applied_at | dt("%Y-%m-%d"))) if asset.tag_applied_at else "not applied" }}</dd>
+      <dt>Label</dt><dd>{{ ("applied " ~ (asset.tag_applied_at | dt("%Y-%m-%d"))) if asset.tag_applied_at else "not applied" }}</dd>
       <dt>Last seen</dt><dd>{{ asset.last_seen_at | ago }}</dd>
     </dl>
     </div>
@@ -69,8 +70,28 @@
       <span class="small secondary">As branch manager you are the accountable custodian.</span>
       <button class="btn primary" type="submit">Accept custody (digital sign-off)</button></form>
     {% endif %}
-    {% if not asset.tag_applied_at and (can(user, "asset.install") or can(user, "asset.register")) %}{% set did.any = True %}
-    <form method="post" action="/assets/{{ asset.id }}/tag" class="actions">{{ csrf() }}<button class="btn" type="submit">Record tag applied</button></form>
+    {% if (not asset.tag_applied_at or not asset.rfid_verified_at) and asset.status != "DISPOSED" and (can(user, "asset.install") or can(user, "asset.register")) %}{% set did.any = True %}
+    <form method="post" action="/assets/{{ asset.id }}/tag" class="actions">{{ csrf() }}
+      <span class="small secondary">Retrofit: encode, apply and verify the RFID + QR label.</span>
+      <button class="btn" type="submit">Record label applied &amp; verified</button></form>
+    {% endif %}
+    {% if asset.status == "IN_STOCK" and not asset.install_date and can(user, "asset.register") %}{% set did.any = True %}
+    <h3>Central staging</h3>
+    {% if not asset.rfid_verified_at %}
+    <form method="post" action="/assets/{{ asset.id }}/rfid-verify" class="actions">{{ csrf() }}
+      <input name="epc" class="mono" placeholder="EPC read by the verify reader" required aria-label="EPC read">
+      <button class="btn" type="submit">Verify RFID tag</button></form>
+    {% endif %}
+    {% if needs_staging %}
+    <form method="post" action="/assets/{{ asset.id }}/staging" class="stack">{{ csrf() }}
+      <p class="small secondary">Golden config, firmware, SNMPv3 and NTP; 24–48 h burn-in before dispatch.</p>
+      <div class="form-grid">
+        <div class="field"><label for="s_cfg">Config backup reference</label><input id="s_cfg" name="config_backup_ref" required></div>
+        <div class="field"><label for="s_burn">Burn-in (hours)</label><input id="s_burn" name="burn_in_hours" type="number" min="24" value="24" required></div>
+      </div>
+      <div>{% for key, label in install_checklist.items() %}<label class="check"><input type="checkbox" name="{{ key }}" value="1"> {{ label }}</label>{% endfor %}</div>
+      <button class="btn" type="submit">Record staged – ready</button></form>
+    {% endif %}
     {% endif %}
     {% if can(user, "change.create") and not open_change and allowed_changes %}{% set did.any = True %}
     <div class="actions">{% for ct in allowed_changes %}<a class="btn small" href="/changes/new?asset_id={{ asset.id }}&type={{ ct.value }}">{{ CHANGE_LABELS[ct.value] }}</a>{% endfor %}</div>
@@ -89,10 +110,24 @@
 
 <div class="stack">
   <section class="card">
-    <h2>QR tag</h2>
+    <h2>RFID + QR label</h2>
     <img src="/assets/{{ asset.id }}/qr.svg" alt="QR code for {{ asset.asset_number }}" width="148" height="148">
     <p class="mono small">{{ asset.asset_number }}</p>
+    <dl class="kv">
+      <dt>EPC</dt><dd class="mono small">{{ asset.rfid_epc or "—" }}</dd>
+      <dt>Verified</dt><dd>{{ asset.rfid_verified_at | dt if asset.rfid_verified_at else "not verified" }}</dd>
+      <dt>Last read</dt><dd>{% if asset.last_rfid_read_at %}{{ asset.last_rfid_read_at | ago }}{% if asset.last_read_point %} · {{ asset.last_read_point.name }}{% endif %}{% else %}—{% endif %}</dd>
+      <dt>Staging</dt><dd>{% if asset.staged_at %}staged – ready {{ asset.staged_at | dt("%Y-%m-%d") }} · {{ asset.config_backup_ref or "" }} · {{ asset.burn_in_hours }} h{% elif needs_staging %}not staged{% else %}n/a{% endif %}</dd>
+      {% if shipment %}<dt>Shipment</dt><dd><a href="/shipments/{{ shipment.id }}">{{ shipment.reference }}</a> · {{ shipment.status.replace("_", " ").lower() }}</dd>
+      {% elif last_item %}<dt>Last shipment</dt><dd><a href="/shipments/{{ last_item.shipment.id }}">{{ last_item.shipment.reference }}</a> · {{ last_item.result.lower() }}</dd>{% endif %}
+    </dl>
   </section>
+  {% if reads %}
+  <section class="card"><h2>RFID reads</h2>
+    <table><tbody>{% for r in reads %}<tr><td class="nowrap small">{{ r.read_at | dt }}</td><td class="small">{{ r.read_point.name }}<br><span class="muted">{{ r.event.lower() }}</span></td>
+      <td class="small">{{ simple_badge(r.outcome.replace("_", " ").lower(), "critical" if r.outcome == "EXCEPTION" else "good" if r.outcome == "UPDATED" else "") }}<br><span class="secondary">{{ r.detail or "" }}</span></td></tr>{% endfor %}</tbody></table>
+  </section>
+  {% endif %}
   <section class="card">
     <h2>Changes</h2>
     <table><tbody>{% for c in changes %}<tr><td><a href="/changes/{{ c.id }}">{{ c.reference }}</a></td><td>{{ CHANGE_LABELS[c.change_type] }}</td><td>{{ c.status.replace("_", " ").title() }}</td></tr>

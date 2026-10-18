@@ -50,7 +50,37 @@ def create_schema() -> None:
 
     engine = get_engine()
     Base.metadata.create_all(engine)
+    add_missing_columns(engine)
     install_immutability_guards(engine)
+
+
+def add_missing_columns(engine: Engine) -> list[str]:
+    """Upgrade an existing database in place: add nullable columns introduced by a newer release.
+
+    ``create_all`` creates new tables but never alters existing ones. New columns on existing tables
+    are always nullable, so adding them is safe; their indexes are created alongside.
+    """
+    from sqlalchemy import inspect
+    from sqlalchemy.schema import CreateIndex
+
+    inspector = inspect(engine)
+    existing_tables = set(inspector.get_table_names())
+    added: list[str] = []
+    with engine.begin() as conn:
+        for table in Base.metadata.sorted_tables:
+            if table.name not in existing_tables:
+                continue
+            present = {c["name"] for c in inspector.get_columns(table.name)}
+            for column in table.columns:
+                if column.name in present or not column.nullable:
+                    continue
+                col_type = column.type.compile(dialect=engine.dialect)
+                conn.exec_driver_sql(f'ALTER TABLE "{table.name}" ADD COLUMN "{column.name}" {col_type}')
+                added.append(f"{table.name}.{column.name}")
+                for index in table.indexes:
+                    if column.name in index.columns:
+                        conn.execute(CreateIndex(index, if_not_exists=True))
+    return added
 
 
 def new_session() -> Session:

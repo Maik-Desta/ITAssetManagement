@@ -62,6 +62,8 @@ class Branch(Base):
     rollout_checklist: Mapped[dict] = mapped_column(JSON, default=dict)
     planned_go_live: Mapped[date | None] = mapped_column(Date)
     went_live_at: Mapped[datetime | None] = mapped_column(DateTime)
+    # Security tier (slide 33): A = critical (exit portal, cabinet reader, cameras), B = other branches.
+    security_tier: Mapped[str | None] = mapped_column(String(1), default="B")
 
     region: Mapped[Region] = relationship(back_populates="branches")
     manager: Mapped[User | None] = relationship(foreign_keys=[manager_id])
@@ -205,6 +207,18 @@ class Asset(Base):
     custody_accepted_at: Mapped[datetime | None] = mapped_column(DateTime)
     custody_accepted_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
 
+    # RFID (slides 20, 23, 29): EPC encoded from the asset number; verified by a read after encoding.
+    rfid_epc: Mapped[str | None] = mapped_column(String(24), unique=True, index=True)
+    rfid_verified_at: Mapped[datetime | None] = mapped_column(DateTime)
+    last_rfid_read_at: Mapped[datetime | None] = mapped_column(DateTime)
+    last_read_point_id: Mapped[int | None] = mapped_column(ForeignKey("read_points.id", use_alter=True))
+    # Staging (slide 27): golden config backed up and burn-in passed before dispatch.
+    config_backup_ref: Mapped[str | None] = mapped_column(String(120))
+    burn_in_hours: Mapped[int | None] = mapped_column(Integer)
+    staged_at: Mapped[datetime | None] = mapped_column(DateTime)
+    # Physical security (slide 31): set while a suspected-removal incident is open.
+    suspected_removal_at: Mapped[datetime | None] = mapped_column(DateTime)
+
     # Monitoring
     monitored: Mapped[bool] = mapped_column(Boolean, default=False)
     oper_state: Mapped[str] = mapped_column(String(10), default="UNKNOWN")
@@ -222,6 +236,7 @@ class Asset(Base):
     custodian: Mapped[User | None] = relationship(foreign_keys=[custodian_id])
     custody_accepted_by: Mapped[User | None] = relationship(foreign_keys=[custody_accepted_by_id])
     contract: Mapped[Contract | None] = relationship()
+    last_read_point: Mapped[ReadPoint | None] = relationship(foreign_keys=[last_read_point_id])
     history: Mapped[list[AssetHistory]] = relationship(back_populates="asset",
                                                        order_by="AssetHistory.id.desc()")
 
@@ -297,6 +312,8 @@ class EquipmentRequest(Base):
     supplier: Mapped[str | None] = mapped_column(String(120))
     contract_id: Mapped[int | None] = mapped_column(ForeignKey("contracts.id"))
     received_quantity: Mapped[int] = mapped_column(Integer, default=0)
+    # Above the standard branch blueprint: IT approval must come from the Design Authority.
+    outside_blueprint: Mapped[bool | None] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
 
@@ -365,6 +382,160 @@ class ChangeApproval(Base):
 
     change: Mapped[ChangeRequest] = relationship(back_populates="approvals")
     approver: Mapped[User | None] = relationship()
+
+
+class ShippingNotice(Base):
+    """Vendor shipping notice (ASN) with serials: the expected records 'on order' (slides 27, 48)."""
+
+    __tablename__ = "shipping_notices"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    request_id: Mapped[int] = mapped_column(ForeignKey("equipment_requests.id"), index=True)
+    asn_ref: Mapped[str] = mapped_column(String(60), unique=True)
+    serials: Mapped[list] = mapped_column(JSON, default=list)
+    eta: Mapped[date | None] = mapped_column(Date)
+    received_serials: Mapped[list] = mapped_column(JSON, default=list)
+    created_by_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+    request: Mapped[EquipmentRequest] = relationship()
+
+    @property
+    def outstanding(self) -> list[str]:
+        received = {s.lower() for s in self.received_serials or []}
+        return [s for s in self.serials or [] if s.lower() not in received]
+
+
+class Shipment(Base):
+    """Pick, pack and dispatch from central staging to a branch, with tag manifest and seal (slides 27-28)."""
+
+    __tablename__ = "shipments"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    reference: Mapped[str] = mapped_column(String(20), unique=True)
+    from_branch_id: Mapped[int] = mapped_column(ForeignKey("branches.id"))
+    to_branch_id: Mapped[int] = mapped_column(ForeignKey("branches.id"), index=True)
+    status: Mapped[str] = mapped_column(String(15), default="PACKED", index=True)
+    seal_number: Mapped[str] = mapped_column(String(40))
+    carrier: Mapped[str | None] = mapped_column(String(120))
+    eta: Mapped[datetime | None] = mapped_column(DateTime)
+    created_by_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    dispatched_at: Mapped[datetime | None] = mapped_column(DateTime)
+    dispatched_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+    received_at: Mapped[datetime | None] = mapped_column(DateTime)
+    received_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+    seal_intact: Mapped[bool | None] = mapped_column(Boolean)
+    variance_note: Mapped[str | None] = mapped_column(Text)
+
+    from_branch: Mapped[Branch] = relationship(foreign_keys=[from_branch_id])
+    to_branch: Mapped[Branch] = relationship(foreign_keys=[to_branch_id])
+    created_by: Mapped[User] = relationship(foreign_keys=[created_by_id])
+    received_by: Mapped[User | None] = relationship(foreign_keys=[received_by_id])
+    items: Mapped[list[ShipmentItem]] = relationship(back_populates="shipment", order_by="ShipmentItem.id")
+
+
+class ShipmentItem(Base):
+    __tablename__ = "shipment_items"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    shipment_id: Mapped[int] = mapped_column(ForeignKey("shipments.id"), index=True)
+    asset_id: Mapped[int] = mapped_column(ForeignKey("assets.id"), index=True)
+    change_id: Mapped[int | None] = mapped_column(ForeignKey("change_requests.id"))  # transfer between branches
+    dispatch_read_at: Mapped[datetime | None] = mapped_column(DateTime)
+    received_read_at: Mapped[datetime | None] = mapped_column(DateTime)
+    result: Mapped[str] = mapped_column(String(10), default="PENDING")
+
+    shipment: Mapped[Shipment] = relationship(back_populates="items")
+    asset: Mapped[Asset] = relationship()
+    change: Mapped[ChangeRequest | None] = relationship()
+
+
+# ---------------------------------------------------------------------------
+# RFID read points and reads (slides 20, 29)
+# ---------------------------------------------------------------------------
+
+
+class ReadPoint(Base):
+    __tablename__ = "read_points"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    code: Mapped[str] = mapped_column(String(40), unique=True)
+    name: Mapped[str] = mapped_column(String(120))
+    kind: Mapped[str] = mapped_column(String(20))
+    branch_id: Mapped[int] = mapped_column(ForeignKey("branches.id"), index=True)
+    location_id: Mapped[int | None] = mapped_column(ForeignKey("locations.id"))
+    camera_ref: Mapped[str | None] = mapped_column(String(80))  # VMS camera covering this read point
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    last_heartbeat_at: Mapped[datetime | None] = mapped_column(DateTime)
+
+    branch: Mapped[Branch] = relationship()
+    location: Mapped[Location | None] = relationship()
+
+
+class RfidRead(Base):
+    """Every read the middleware reports, with what the platform did about it (never a silent update)."""
+
+    __tablename__ = "rfid_reads"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    read_point_id: Mapped[int] = mapped_column(ForeignKey("read_points.id"), index=True)
+    epc: Mapped[str] = mapped_column(String(32), index=True)
+    asset_id: Mapped[int | None] = mapped_column(ForeignKey("assets.id"), index=True)
+    event: Mapped[str] = mapped_column(String(10))
+    read_at: Mapped[datetime] = mapped_column(DateTime, index=True)
+    received_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    outcome: Mapped[str] = mapped_column(String(12))
+    detail: Mapped[str | None] = mapped_column(Text)
+    operator: Mapped[str | None] = mapped_column(String(80))  # handheld user
+
+    read_point: Mapped[ReadPoint] = relationship()
+    asset: Mapped[Asset | None] = relationship()
+
+
+# ---------------------------------------------------------------------------
+# Physical security (slides 31-33)
+# ---------------------------------------------------------------------------
+
+
+class SecurityEvent(Base):
+    """Access-control, door, motion and device-health events used by the correlation engine."""
+
+    __tablename__ = "security_events"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    branch_id: Mapped[int] = mapped_column(ForeignKey("branches.id"), index=True)
+    kind: Mapped[str] = mapped_column(String(20))
+    occurred_at: Mapped[datetime] = mapped_column(DateTime, index=True)
+    received_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    door: Mapped[str | None] = mapped_column(String(80))
+    badge_id: Mapped[str | None] = mapped_column(String(60))
+    authorised: Mapped[bool | None] = mapped_column(Boolean)
+    device_ref: Mapped[str | None] = mapped_column(String(80))
+    message: Mapped[str | None] = mapped_column(Text)
+    alert_id: Mapped[int | None] = mapped_column(ForeignKey("alerts.id"))
+
+    branch: Mapped[Branch] = relationship()
+
+
+class VideoClip(Base):
+    """Camera bookmark and clip attached to an alarm as evidence (30 s before / 60 s after)."""
+
+    __tablename__ = "video_clips"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    alert_id: Mapped[int] = mapped_column(ForeignKey("alerts.id"), index=True)
+    camera_ref: Mapped[str] = mapped_column(String(80))
+    start_at: Mapped[datetime] = mapped_column(DateTime)
+    end_at: Mapped[datetime] = mapped_column(DateTime)
+    status: Mapped[str] = mapped_column(String(15), default="REQUESTED")
+    vms_ref: Mapped[str | None] = mapped_column(String(120))
+    sha256: Mapped[str | None] = mapped_column(String(64))
+    url: Mapped[str | None] = mapped_column(String(255))
+    requested_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime)
+
+    alert: Mapped[Alert] = relationship(back_populates="clips")
 
 
 # ---------------------------------------------------------------------------
@@ -439,6 +610,7 @@ class Alert(Base):
     acknowledged_by: Mapped[User | None] = relationship(foreign_keys=[acknowledged_by_id])
     resolved_by: Mapped[User | None] = relationship(foreign_keys=[resolved_by_id])
     escalations: Mapped[list[AlertEscalation]] = relationship(back_populates="alert", order_by="AlertEscalation.id")
+    clips: Mapped[list[VideoClip]] = relationship(back_populates="alert", order_by="VideoClip.id")
 
     @property
     def impact(self) -> str:
@@ -451,6 +623,15 @@ class Alert(Base):
         from itam.enums import RESPONSE_MINUTES, Severity
 
         return self.detected_at + timedelta(minutes=RESPONSE_MINUTES[Severity(self.severity)])
+
+    @property
+    def escalation_step(self) -> timedelta:
+        """Time between escalation levels: 5 minutes for security alarms, else the response target."""
+        from itam.enums import RESPONSE_MINUTES, SECURITY_CATEGORIES, SECURITY_ESCALATION_MINUTES, Severity
+
+        if self.category in SECURITY_CATEGORIES:
+            return timedelta(minutes=SECURITY_ESCALATION_MINUTES)
+        return timedelta(minutes=RESPONSE_MINUTES[Severity(self.severity)])
 
 
 class AlertEscalation(Base):

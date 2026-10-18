@@ -12,7 +12,6 @@ from itam import auditlog
 from itam.config import settings
 from itam.enums import (
     INSTALLED_STATUSES,
-    RESPONSE_MINUTES,
     AlertCategory,
     AlertSource,
     AlertStatus,
@@ -56,6 +55,17 @@ CATEGORY_AUDIENCE: dict[AlertCategory, list[Role]] = {
     AlertCategory.ROGUE_DEVICE: [Role.CISO],
     AlertCategory.DEVICE_SWAPPED: [Role.CISO, Role.BRANCH_MANAGER],
     AlertCategory.CONFIG_CHANGE: [Role.CISO],
+    AlertCategory.UNAPPROVED_DEVICE: [Role.CISO, Role.BRANCH_MANAGER],
+    # Physical security (slide 33: branch manager, security, SOC).
+    AlertCategory.SUSPECTED_REMOVAL: [Role.CISO, Role.BRANCH_MANAGER, Role.IT_ASSET_MANAGER],
+    AlertCategory.CABINET_TAG_MISSING: [Role.CISO],
+    AlertCategory.CABINET_DOOR: [Role.CISO, Role.BRANCH_MANAGER],
+    AlertCategory.INTRUSION: [Role.CISO, Role.BRANCH_MANAGER],
+    AlertCategory.SECURITY_DEVICE_TAMPER: [Role.CISO],
+    AlertCategory.UNEXPLAINED_EXIT: [Role.CISO, Role.IT_ASSET_MANAGER],
+    # Logistics (slides 27-28).
+    AlertCategory.SHIPMENT_VARIANCE: [Role.CISO, Role.IT_ASSET_MANAGER],
+    AlertCategory.SHIPMENT_OVERDUE: [Role.CISO, Role.IT_ASSET_MANAGER],
 }
 
 TEMPERATURE_LIMIT_C = 35.0
@@ -136,6 +146,10 @@ def raise_alert(db: Session, *, dedup_key: str, severity: Severity, category: Al
                           f"All WAN links to {branch.name} are down. NOC is responding. Ticket {alert.ticket_ref}.")
     auditlog.record(db, None, "alert.raise", "alert", alert.id, severity=severity.value, category=category.value,
                     title=title, asset=asset.asset_number if asset else None, branch=branch.code if branch else None)
+    if category in (AlertCategory.DEVICE_DOWN, AlertCategory.DEVICE_NOT_DISCOVERED, AlertCategory.DEVICE_SWAPPED):
+        from itam.services.security import attach_comms_room_clip
+
+        attach_comms_room_clip(db, alert)
     return alert
 
 
@@ -180,6 +194,9 @@ def resolve(db: Session, actor: User, alert: Alert, resolution: str) -> Alert:
     alert.resolved_by_id = actor.id
     alert.resolution = resolution.strip()
     auditlog.record(db, actor, "alert.resolve", "alert", alert.id, resolution=resolution)
+    from itam.services.security import clear_suspected_removal
+
+    clear_suspected_removal(db, alert)
     return alert
 
 
@@ -230,7 +247,7 @@ def escalate_overdue(db: Session, now: datetime | None = None) -> int:
     alerts = db.execute(select(Alert).where(Alert.status == AlertStatus.OPEN.value)).scalars().all()
     for alert in alerts:
         sev = Severity(alert.severity)
-        target = timedelta(minutes=RESPONSE_MINUTES[sev])
+        target = alert.escalation_step
         due_level = min(int((now - alert.detected_at) / target), MAX_ESCALATION[sev])
         if due_level <= alert.escalation_level:
             continue
@@ -255,7 +272,7 @@ def escalation_path(alert: Alert, now: datetime | None = None) -> list[dict]:
     """L1 → L2 → L3 → CEO with the state of each step: done, due (time), skipped or not applicable."""
     now = now or utcnow()
     sev = Severity(alert.severity)
-    target = timedelta(minutes=RESPONSE_MINUTES[sev])
+    target = alert.escalation_step
     done = {}
     for e in alert.escalations:
         done.setdefault(e.level, e)

@@ -64,7 +64,7 @@ PERMISSIONS: dict[str, set[Role]] = {
     "change.close": {R.IT_ASSET_MANAGER},
     "change.finance_confirm": {R.FINANCE},
     # Monitoring (slide 21)
-    "alert.respond": {R.NOC, R.REGIONAL_IT, R.REGIONAL_LEAD, R.HEAD_INFRA},
+    "alert.respond": {R.NOC, R.REGIONAL_IT, R.REGIONAL_LEAD, R.HEAD_INFRA, R.CISO},  # CISO: security alarms
     "incident.report": {R.NOC},
     # Exceptions & audits (slide 22)
     "exception.resolve": {R.IT_ASSET_MANAGER, R.REGIONAL_LEAD, R.CISO},
@@ -81,6 +81,13 @@ PERMISSIONS: dict[str, set[Role]] = {
     "reference.manage": {R.IT_ASSET_MANAGER, R.ADMIN},
     "admin.users": {R.ADMIN},
     "admin.collectors": {R.ADMIN},
+    "readpoints.manage": {R.ADMIN, R.IT_ASSET_MANAGER},
+    # Staging & logistics (slides 27-28): pick, pack and dispatch from the central staging centre.
+    "shipment.manage": {R.IT_ASSET_MANAGER},
+    "shipment.view": {R.IT_ASSET_MANAGER, R.ADMIN, R.CIO, R.CISO, R.HEAD_INFRA, R.INTERNAL_AUDIT, R.NOC,
+                      R.REGIONAL_LEAD, R.REGIONAL_IT, R.BRANCH_MANAGER, R.PROCUREMENT, R.FINANCE},
+    "blueprint.view": {R.IT_ASSET_MANAGER, R.ADMIN, R.CIO, R.CISO, R.HEAD_INFRA, R.INTERNAL_AUDIT, R.EXECUTIVE,
+                       R.REGIONAL_LEAD, R.REGIONAL_IT, R.BRANCH_MANAGER, R.PROCUREMENT},
     "notifications.view": {R.ADMIN, R.NOC, R.IT_ASSET_MANAGER},
 }
 

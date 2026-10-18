@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% from "macros.html" import csrf, status_badge, simple_badge with context %}
+{% block title %}{{ s.reference }}{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>{{ s.reference }} · {{ s.from_branch.code }} → {{ s.to_branch.code }} {{ s.to_branch.name }}</h1>
+  <p>{{ s.items | length }} item(s) · seal <span class="mono">{{ s.seal_number }}</span> · {{ s.carrier or "carrier not set" }} · {{ s.status.replace("_", " ").title() }}</p></div></div>
+<div class="steps">{% set order = ["PACKED", "IN_TRANSIT", "DELIVERED"] %}
+  {% for st in order %}<span class="{{ 'current' if st == s.status else 'done' if s.status in order and loop.index0 < order.index(s.status) }}">{{ ["5 Pick & pack", "6–7 Dispatch & in transit", "8–9 Received & custody"][loop.index0] }}</span>{% endfor %}
+  {% if s.status == "VARIANCE" %}<span class="current">Received with variance</span>{% endif %}{% if s.status == "CANCELLED" %}<span class="current">Cancelled</span>{% endif %}</div>
+{% if s.variance_note and s.status == "VARIANCE" %}<div class="flash error" role="alert">Variance: {{ s.variance_note }}. Nothing is installed without a matched record.</div>{% endif %}
+<section class="card">
+  <h2>Manifest</h2>
+  <div class="table-wrap"><table><thead><tr><th>Asset</th><th>Type</th><th>EPC</th><th>Exit read</th><th>Branch read</th><th>Result</th><th>Status</th></tr></thead><tbody>
+  {% for i in s.items %}<tr><td class="nowrap"><a class="mono" href="/assets/{{ i.asset.id }}">{{ i.asset.asset_number }}</a>{% if i.change %}<div class="small"><a href="/changes/{{ i.change.id }}">{{ i.change.reference }}</a></div>{% endif %}</td>
+    <td>{{ TYPE_LABELS[i.asset.asset_type] }}</td><td class="mono small">{{ i.asset.rfid_epc }}</td>
+    <td class="nowrap small">{{ i.dispatch_read_at | dt if i.dispatch_read_at else "—" }}</td><td class="nowrap small">{{ i.received_read_at | dt if i.received_read_at else "—" }}</td>
+    <td>{{ simple_badge(i.result.title(), "good" if i.result == "MATCHED" else "critical" if i.result == "MISSING" else "") }}</td><td>{{ status_badge(i.asset.status) }}</td></tr>{% endfor %}
+  </tbody></table></div>
+</section>
+<div class="grid grid-2">
+<section class="card">
+  <dl class="kv">
+    <dt>Packed</dt><dd>{{ s.created_at | dt }} · {{ s.created_by.full_name }}</dd>
+    <dt>ETA</dt><dd>{{ s.eta | dt if s.eta else "—" }}</dd>
+    <dt>Dispatched</dt><dd>{{ s.dispatched_at | dt if s.dispatched_at else "—" }}</dd>
+    <dt>Received</dt><dd>{% if s.received_at %}{{ s.received_at | dt }} · {{ s.received_by.full_name }}{% else %}—{% endif %}</dd>
+    <dt>Seal</dt><dd>{{ "intact" if s.seal_intact else "broken / mismatch" if s.seal_intact is not none else "not checked" }}</dd>
+  </dl>
+</section>
+<section class="card stack">
+  {% if s.status == "PACKED" and can(user, "shipment.manage") %}
+    <p class="small secondary">Normally the dispatch-dock exit portal dispatches the shipment when every carton has been read. Dispatch manually only if the portal is unavailable.</p>
+    <form method="post" action="/shipments/{{ s.id }}/dispatch">{{ csrf() }}<button class="btn primary" type="submit">Dispatch manually</button></form>
+    <form method="post" action="/shipments/{{ s.id }}/cancel" class="actions">{{ csrf() }}<input name="reason" placeholder="Reason" required aria-label="Reason"><button class="btn danger" type="submit">Cancel</button></form>
+  {% elif s.status == "IN_TRANSIT" and can_receive %}
+    <h2>Receive at {{ s.to_branch.code }}</h2>
+    <p class="small secondary">Read the cartons with the handheld (items read show above), or scan / type the asset numbers or EPCs below. Check the tamper seal before opening.</p>
+    <form method="post" action="/shipments/{{ s.id }}/receive" class="stack">{{ csrf() }}
+      <textarea name="scanned" placeholder="Asset numbers or EPCs, one per line (optional if read by handheld)"></textarea>
+      <div class="form-grid"><div class="field"><label for="sealno">Seal number on arrival</label><input id="sealno" name="seal_number" value=""></div>
+        <div class="field"><label for="note">Note</label><input id="note" name="note"></div></div>
+      <label class="check"><input type="checkbox" name="seal_intact" value="1"> Tamper seal intact</label>
+      <button class="btn primary" type="submit">Confirm receipt</button></form>
+  {% elif s.status in ["DELIVERED", "VARIANCE"] and is_manager %}
+    <form method="post" action="/shipments/{{ s.id }}/custody" class="actions">{{ csrf() }}
+      <span class="small secondary">As branch manager you become the custodian of the matched items.</span>
+      <button class="btn primary" type="submit">Accept custody (digital signature)</button></form>
+  {% else %}<p class="muted small">No action required from you.</p>{% endif %}
+</section>
+</div>
+{% endblock %}

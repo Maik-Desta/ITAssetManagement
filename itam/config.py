@@ -49,6 +49,26 @@ class Settings:
     collector_stale_minutes: int = field(default_factory=lambda: _env_int("COLLECTOR_STALE_MINUTES", 30))
     warranty_warning_days: int = field(default_factory=lambda: _env_int("WARRANTY_WARNING_DAYS", 90))
 
+    # Operating model (slides 5, 43): IN_HOUSE, SISTER_COMPANY (recommended) or OUTSOURCED, and the operator's name.
+    operating_model: str = field(default_factory=lambda: (_env("OPERATING_MODEL") or "SISTER_COMPANY").upper())
+    operator_name: str = field(default_factory=lambda: _env("OPERATOR_NAME", "Group IT Services"))
+
+    # RFID and physical security (slides 20, 29, 31-33).
+    # A cabinet tag missed this many consecutive read cycles (with no change ticket) raises an alarm.
+    cabinet_missed_cycles: int = field(default_factory=lambda: _env_int("CABINET_MISSED_CYCLES", 2))
+    # A fixed reader silent this long is treated as tampered / offline.
+    reader_stale_minutes: int = field(default_factory=lambda: _env_int("READER_STALE_MINUTES", 15))
+    # An authorised badge this many seconds before an exit read or door event explains it.
+    badge_window_seconds: int = field(default_factory=lambda: _env_int("BADGE_WINDOW_SECONDS", 120))
+    # An approved change scheduled within this many hours counts as "inside an approved change window".
+    change_window_hours: int = field(default_factory=lambda: _env_int("CHANGE_WINDOW_HOURS", 4))
+    # Branch business hours (local time, 24 h clock); door and motion events outside them are "after hours".
+    business_hours: str = field(default_factory=lambda: _env("BUSINESS_HOURS", "07-19"))
+    # Branch local time = UTC + this offset (timestamps are stored in UTC). Cameroon: +1.
+    utc_offset_hours: int = field(default_factory=lambda: _env_int("UTC_OFFSET_HOURS", 1))
+    # Video management system: JSON POST {action, camera, start, end, alert} for bookmarks, clips and PTZ.
+    vms_url: str | None = field(default_factory=lambda: _env("VMS_URL"))
+
     # Session / security.
     session_max_age: int = field(default_factory=lambda: _env_int("SESSION_MAX_AGE", 8 * 3600))
     secure_cookies: bool = field(default_factory=lambda: _env_bool("SECURE_COOKIES", False))
@@ -74,6 +94,14 @@ class Settings:
     @property
     def mfa_roles(self) -> set[str]:
         return {r.strip() for r in self.mfa_required_roles.split(",") if r.strip()}
+
+    def is_after_hours(self, utc_hour: int) -> bool:
+        hour = (utc_hour + self.utc_offset_hours) % 24
+        start, _, end = self.business_hours.partition("-")
+        try:
+            return not int(start) <= hour < int(end)
+        except ValueError:
+            return not 7 <= hour < 19
 
 
 settings = Settings()
