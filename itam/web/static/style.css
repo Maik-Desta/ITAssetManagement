@@ -477,3 +477,210 @@ details.card[open] > summary { margin-bottom: 12px; }
   .grid-2, .grid-3 { grid-template-columns: 1fr; }
   .tile .value { font-size: 1.6rem; }
 }
+
+/* =============================================================================================
+   Visual layer: framed "window" panels, glass chrome, richer tiles, tables and controls.
+   Loaded last, so it restyles every page without template changes. Light and dark themes.
+   ============================================================================================= */
+:root {
+  --win-border: #d9dee6;
+  --win-edge: rgba(255, 255, 255, .9);
+  --chrome-1: #f7f8fa;
+  --chrome-2: #eceff3;
+  --chrome-text: #4a5262;
+  --glow-1: rgba(42, 120, 214, .10);
+  --glow-2: rgba(27, 175, 122, .07);
+  --win-shadow: 0 1px 0 rgba(255, 255, 255, .8) inset, 0 1px 2px rgba(16, 24, 40, .05),
+                0 8px 24px -6px rgba(16, 24, 40, .10);
+  --win-shadow-hover: 0 1px 0 rgba(255, 255, 255, .8) inset, 0 2px 4px rgba(16, 24, 40, .06),
+                      0 18px 40px -10px rgba(16, 24, 40, .18);
+  --row-hover: #eef4fd;
+  --th-bg: #f3f5f8;
+  --topbar-bg: rgba(252, 252, 251, .78);
+  --nav-grad: linear-gradient(180deg, #0f3d78 0%, #0b2f5e 55%, #082447 100%);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0d0f13;
+    --surface-1: #161a21;
+    --surface-2: #1d222b;
+    --border: #2a303b;
+    --grid: #232933;
+    --win-border: #2e3542;
+    --win-edge: rgba(255, 255, 255, .06);
+    --chrome-1: #1f2530;
+    --chrome-2: #191e27;
+    --chrome-text: #aeb6c4;
+    --glow-1: rgba(57, 135, 229, .16);
+    --glow-2: rgba(25, 158, 112, .10);
+    --win-shadow: 0 1px 0 rgba(255, 255, 255, .05) inset, 0 10px 30px -8px rgba(0, 0, 0, .65);
+    --win-shadow-hover: 0 1px 0 rgba(255, 255, 255, .07) inset, 0 20px 44px -10px rgba(0, 0, 0, .8);
+    --row-hover: #1c2636;
+    --th-bg: #1a1f28;
+    --topbar-bg: rgba(18, 21, 27, .78);
+    --nav-grad: linear-gradient(180deg, #0c1a2e 0%, #0a1524 60%, #070f1b 100%);
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0d0f13; --surface-1: #161a21; --surface-2: #1d222b; --border: #2a303b; --grid: #232933;
+  --win-border: #2e3542; --win-edge: rgba(255, 255, 255, .06); --chrome-1: #1f2530; --chrome-2: #191e27;
+  --chrome-text: #aeb6c4; --glow-1: rgba(57, 135, 229, .16); --glow-2: rgba(25, 158, 112, .10);
+  --win-shadow: 0 1px 0 rgba(255, 255, 255, .05) inset, 0 10px 30px -8px rgba(0, 0, 0, .65);
+  --win-shadow-hover: 0 1px 0 rgba(255, 255, 255, .07) inset, 0 20px 44px -10px rgba(0, 0, 0, .8);
+  --row-hover: #1c2636; --th-bg: #1a1f28; --topbar-bg: rgba(18, 21, 27, .78);
+  --nav-grad: linear-gradient(180deg, #0c1a2e 0%, #0a1524 60%, #070f1b 100%);
+}
+
+/* Page ground: soft light from the top corners -------------------------------------------- */
+body { -webkit-font-smoothing: antialiased; }
+.main {
+  background:
+    radial-gradient(900px 420px at 0% 0%, var(--glow-1), transparent 70%),
+    radial-gradient(700px 380px at 100% 0%, var(--glow-2), transparent 70%),
+    var(--bg);
+}
+.page-head h1 { font-size: 1.75rem; font-weight: 720; letter-spacing: -.02em; }
+.page-head p { max-width: 90ch; }
+
+/* Sidebar and top bar ------------------------------------------------------------------------ */
+.sidebar { background: var(--nav-grad); border-right: 1px solid rgba(255, 255, 255, .06);
+  box-shadow: 1px 0 0 rgba(0, 0, 0, .15); }
+.sidebar a { border-radius: 8px; transition: background .15s, color .15s; }
+.sidebar a.active { background: linear-gradient(90deg, rgba(57, 135, 229, .55), rgba(57, 135, 229, .18));
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .10); }
+.topbar { position: sticky; top: 0; z-index: 20; background: var(--topbar-bg);
+  -webkit-backdrop-filter: saturate(160%) blur(12px); backdrop-filter: saturate(160%) blur(12px); }
+.topbar input[type=search] { border-radius: 999px; padding-left: 14px; min-width: 260px; }
+
+/* Panels become windows: title bar with window controls, framed border, depth -------------- */
+.card {
+  position: relative;
+  padding: 52px 20px 20px;
+  border: 1px solid var(--win-border);
+  border-radius: 14px;
+  background:
+    linear-gradient(180deg, var(--chrome-1), var(--chrome-2)) top / 100% 38px no-repeat,
+    var(--surface-1);
+  box-shadow: var(--win-shadow);
+  transition: box-shadow .2s ease, transform .2s ease, border-color .2s ease;
+}
+.card:hover { box-shadow: var(--win-shadow-hover); }
+/* Window controls */
+.card::before {
+  content: ""; position: absolute; top: 14px; left: 16px; width: 50px; height: 10px; pointer-events: none;
+  background:
+    radial-gradient(circle at 5px 5px, #ff5f57 4.5px, transparent 5px),
+    radial-gradient(circle at 23px 5px, #febc2e 4.5px, transparent 5px),
+    radial-gradient(circle at 41px 5px, #28c840 4.5px, transparent 5px);
+}
+/* Title-bar divider */
+.card::after {
+  content: ""; position: absolute; left: 0; right: 0; top: 38px; height: 1px; pointer-events: none;
+  background: var(--win-border); box-shadow: 0 1px 0 var(--win-edge);
+}
+/* The panel's heading becomes the window title */
+.card > h2:first-child, .card > summary:first-child {
+  position: absolute; top: 0; left: 78px; right: 16px; height: 38px; margin: 0;
+  display: flex; align-items: center; gap: 8px;
+  font-size: .76rem; font-weight: 700; letter-spacing: .09em; text-transform: uppercase;
+  color: var(--chrome-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+details.card[open] > summary { margin-bottom: 0; }
+.card > h2:first-child + * { margin-top: 0; }
+.card h2:not(:first-child) { margin-top: 20px; }
+.login-card { padding-top: 56px; }
+.card.all-clear { background:
+    linear-gradient(180deg, rgba(12, 163, 12, .12), rgba(12, 163, 12, .05)) top / 100% 38px no-repeat,
+    var(--surface-1); }
+
+/* Stat tiles: glass panes with a lit top edge and a lift on hover ------------------------- */
+.tiles { gap: 14px; }
+.tile {
+  position: relative; overflow: hidden; border: 1px solid var(--win-border); border-radius: 14px;
+  padding: 16px 18px 14px;
+  background: linear-gradient(160deg, var(--surface-1) 0%, var(--surface-2) 100%);
+  box-shadow: var(--win-shadow);
+  transition: transform .2s ease, box-shadow .2s ease, border-color .2s ease;
+}
+.tile::before {
+  content: ""; position: absolute; left: 0; right: 0; top: 0; height: 3px;
+  background: linear-gradient(90deg, var(--accent), #1baf7a);
+}
+.tile:hover { transform: translateY(-2px); box-shadow: var(--win-shadow-hover); }
+.tile .label { font-size: .74rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+.tile .value { font-size: 2.15rem; font-weight: 750; letter-spacing: -.02em; margin-top: 6px; }
+.tile .sub { margin-top: 2px; }
+progress {
+  -webkit-appearance: none; appearance: none; height: 8px; border: 0; border-radius: 999px; overflow: hidden;
+  background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--win-border); margin-top: 10px;
+}
+progress::-webkit-progress-bar { background: var(--surface-2); border-radius: 999px; }
+progress::-webkit-progress-value { border-radius: 999px; background: linear-gradient(90deg, var(--accent), #1baf7a); }
+progress::-moz-progress-bar { border-radius: 999px; background: linear-gradient(90deg, var(--accent), #1baf7a); }
+
+/* Tables: framed header band, roomy rows, highlighted hover ------------------------------- */
+.card .table-wrap, .card > table { border: 1px solid var(--win-border); border-radius: 10px; overflow: auto; }
+.card > table { display: table; overflow: hidden; }
+th {
+  background: var(--th-bg); color: var(--text-secondary); font-size: .72rem; font-weight: 700;
+  letter-spacing: .07em; text-transform: uppercase; padding: 11px 12px; border-bottom: 1px solid var(--win-border);
+}
+td { padding: 11px 12px; }
+tbody tr { transition: background .12s ease; }
+tbody tr:hover { background: var(--row-hover); }
+tbody tr:hover td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
+td a:first-child { font-weight: 600; }
+
+/* Tabs: a segmented control ---------------------------------------------------------------- */
+.tabs {
+  display: inline-flex; gap: 4px; padding: 4px; border: 1px solid var(--win-border); border-radius: 12px;
+  background: var(--surface-2); margin-bottom: 16px; box-shadow: inset 0 1px 2px rgba(0, 0, 0, .06);
+}
+.tabs a { border: 0; border-radius: 9px; padding: 7px 14px; transition: background .15s, color .15s; }
+.tabs a:hover { background: var(--surface-1); }
+.tabs a.active { background: var(--surface-1); color: var(--text-primary);
+  box-shadow: 0 1px 2px rgba(16, 24, 40, .12), inset 0 0 0 1px var(--win-border); }
+
+/* Buttons, inputs, badges ------------------------------------------------------------------ */
+.btn { border-radius: 9px; border-color: var(--win-border); transition: transform .12s, box-shadow .15s, background .15s; }
+.btn:hover { transform: translateY(-1px); box-shadow: 0 4px 12px -4px rgba(16, 24, 40, .25); }
+.btn:active { transform: translateY(0); }
+.btn.primary { background: linear-gradient(180deg, #3b8ae6, #1f66c1); border-color: #1c5cab;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .25), 0 2px 6px -2px rgba(31, 102, 193, .6); }
+.btn.primary:hover { background: linear-gradient(180deg, #4795ec, #1c5cab); }
+.btn.danger:hover { background: rgba(208, 59, 59, .08); }
+input[type=text], input[type=password], input[type=number], input[type=date], input[type=datetime-local],
+input[type=search], input[type=email], input[type=file], select, textarea {
+  border-radius: 9px; border-color: var(--win-border); transition: border-color .15s, box-shadow .15s; }
+input:focus, select:focus, textarea:focus { outline: none; border-color: var(--accent);
+  box-shadow: 0 0 0 4px var(--accent-wash); }
+.badge { border-color: var(--win-border); padding: 2px 9px; }
+.flash { border-radius: 12px; border-color: var(--win-border); box-shadow: var(--win-shadow); }
+.callout { border-radius: 12px; }
+
+/* Entrance: panels settle in once on page load --------------------------------------------- */
+@keyframes win-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+.content .card, .content .tile { animation: win-in .35s ease both; }
+.content .tile:nth-child(2) { animation-delay: .04s; } .content .tile:nth-child(3) { animation-delay: .08s; }
+.content .tile:nth-child(4) { animation-delay: .12s; } .content .tile:nth-child(5) { animation-delay: .16s; }
+
+@media (prefers-reduced-motion: reduce) {
+  .card, .tile, .btn, tbody tr, .sidebar a { transition: none; }
+  .content .card, .content .tile { animation: none; }
+  .tile:hover, .btn:hover { transform: none; }
+}
+@media (max-width: 760px) {
+  .card { padding: 50px 14px 14px; }
+  .topbar input[type=search] { min-width: 0; }
+  .tabs { display: flex; }
+}
+@media print {
+  .main { background: none; }
+  .card { background: #fff; box-shadow: none; padding-top: 16px; }
+  .card::before, .card::after { display: none; }
+  .card > h2:first-child { position: static; height: auto; padding: 0 0 8px; color: #000; }
+  .tile { box-shadow: none; }
+  .content .card, .content .tile { animation: none; }
+}
+/* Windows stacked in one column keep their own space (grid cells already have a gap). */
+:not(.grid):not(.tiles) > .card + .card { margin-top: 16px; }
