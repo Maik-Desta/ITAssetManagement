@@ -1,8 +1,13 @@
 {% extends "base.html" %}
+{% from "macros.html" import mix_bar, kpi with context %}
 {% block title %}Exceptions{% endblock %}
 {% block content %}
 <div class="page-head"><div><h1>Exception register</h1><p>Discovery reconciliation, physical audits, Finance reconciliation and HR feed · target ≥ 95% closed within 30 days</p></div></div>
-<div class="tiles">{% for k, v in ageing.items() %}<div class="tile"><div class="label">Open, age {{ k }}</div><div class="value">{{ v }}</div></div>{% endfor %}</div>
+<div class="summary-band">
+  <section class="mix-card">{{ mix_bar(type_mix, "Open exceptions by type") }}</section>
+  {% for k, v in ageing.items() %}{{ kpi("Open · age " ~ k, v, "target: closed within 30 days" if loop.last else "", None,
+      ("critical" if v else "good") if loop.last else ("warning" if loop.index == 2 and v else "info"), "clock") }}{% endfor %}
+</div>
 <form class="filters" method="get">
   <div class="field"><label for="status">Status</label><select id="status" name="status"><option value="OPEN" {{ "selected" if status == "OPEN" }}>Open</option><option value="RESOLVED" {{ "selected" if status == "RESOLVED" }}>Resolved</option><option value="" {{ "selected" if not status }}>All</option></select></div>
   <div class="field"><label for="type">Type</label><select id="type" name="type"><option value="">All</option>{% for t in types %}<option value="{{ t.value }}" {{ "selected" if type == t.value }}>{{ t.value.replace("_", " ").title() }}</option>{% endfor %}</select></div>

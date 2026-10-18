@@ -1,7 +1,9 @@
 {% extends "base.html" %}
+{% from "macros.html" import mix_bar %}
 {% block title %}Moves & disposals{% endblock %}
 {% block content %}
 <div class="page-head"><div><h1>Moves, repairs, retirements &amp; disposals</h1><p>Maker-checker approval per the approval matrix · raise a change from the asset page</p></div></div>
+<div class="summary-band one"><section class="mix-card">{{ mix_bar(status_mix, "All changes by status") }}</section></div>
 <div class="tabs">
   <a href="/changes?view=open" class="{{ 'active' if view == 'open' }}">Open</a>
   <a href="/changes?view=mine" class="{{ 'active' if view == 'mine' }}">Awaiting my approval</a>

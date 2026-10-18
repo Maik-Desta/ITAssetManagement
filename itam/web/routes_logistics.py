@@ -14,7 +14,7 @@ from itam.services import NotFound, ServiceError
 from itam.services import catalogue as cat_svc
 from itam.services import logistics as log_svc
 from itam.services.requests import central_store
-from itam.web.deps import DB, CurrentUser, csrf_protect, get_or_404, opt_date, opt_str, redirect, render, require
+from itam.web.deps import DB, CurrentUser, csrf_protect, get_or_404, mix, opt_date, opt_str, redirect, render, require
 
 router = APIRouter(dependencies=[Depends(csrf_protect)])
 
@@ -35,7 +35,15 @@ def shipment_list(request: Request, db: DB, user: CurrentUser, status: str = "")
     if status:
         q = q.where(Shipment.status == status)
     rows = db.execute(q.order_by(Shipment.id.desc()).limit(300)).scalars().all()
-    return render(request, "shipments.html", user, rows=rows, status=status, statuses=list(ShipmentStatus), now=utcnow())
+    from sqlalchemy import func
+
+    from itam.web.mixes import SHIPMENT_STATUS
+
+    counts = dict(db.execute(select(Shipment.status, func.count(Shipment.id)).where(
+        or_(Shipment.to_branch_id.in_(branch_ids), Shipment.from_branch_id.in_(branch_ids)))
+        .group_by(Shipment.status)).all())
+    return render(request, "shipments.html", user, rows=rows, status=status, statuses=list(ShipmentStatus), now=utcnow(),
+                  status_mix=mix(counts, SHIPMENT_STATUS, "/shipments?status={key}", status))
 
 
 @router.get("/shipments/new")

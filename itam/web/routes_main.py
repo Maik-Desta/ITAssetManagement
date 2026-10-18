@@ -155,8 +155,13 @@ def branches(request: Request, db: DB, user: CurrentUser, region: str = "", q: s
     counts = dict(db.execute(select(Asset.branch_id, func.count(Asset.id)).where(
         Asset.status != AssetStatus.DISPOSED.value).group_by(Asset.branch_id)).all())
     regions = db.execute(select(Region).order_by(Region.code)).scalars().all()
+    from collections import Counter
+
+    from itam.web.deps import mix
+    from itam.web.mixes import BRANCH_STATE
+
     return render(request, "branches.html", user, branches=rows, states=states, counts=counts, regions=regions,
-                  region=region, q=q)
+                  region=region, q=q, state_mix=mix(Counter(states.get(b.id) for b in rows), BRANCH_STATE))
 
 
 @router.get("/branches/{branch_id}")

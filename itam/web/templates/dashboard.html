@@ -39,8 +39,15 @@
          "warning" if s.due_count else "good", "clock") }}
 </div>
 
-{# ---------------- Key messages + deployment pipeline ---------------- #}
-<div class="stack">
+<nav class="board-tabs no-print" aria-label="Dashboard views" data-board-tabs>
+  <button type="button" data-view="overview" aria-pressed="true"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 13h8V3H3zM13 21h8V11h-8zM3 21h8v-6H3zM13 3v6h8V3z"/></svg>At a glance</button>
+  <button type="button" data-view="inventory" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 8l-9-5-9 5 9 5 9-5zM3 8v8l9 5 9-5V8M12 13v8"/></svg>Asset inventory</button>
+  <button type="button" data-view="health" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg>Service health</button>
+  <button type="button" data-view="operations" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s-7-6.2-7-12a7 7 0 0114 0c0 5.8-7 12-7 12zM12 11a2 2 0 100-4 2 2 0 000 4z"/></svg>Operations &amp; risk</button>
+</nav>
+
+<div class="board-view" data-view="overview">
+<div class="grid grid-main">
   <section class="card">
     <h2>Key messages for the CEO</h2>
     <ul class="messages two-col">
@@ -50,6 +57,18 @@
       {% endfor %}
     </ul>
   </section>
+  <section class="card">
+    <h2>Open alerts</h2>
+    {% if s.open_alerts %}
+    <table><tbody>
+      {% for a in s.open_alerts %}
+      <tr><td>{{ sev(a.severity) }}</td><td><a href="/alerts/{{ a.id }}">{{ a.title }}</a><div class="muted small">{{ a.detected_at | ago }} · {{ a.status.title() }}</div></td></tr>
+      {% endfor %}
+    </tbody></table>
+    {% else %}<p class="muted">No open alerts.</p>{% endif %}
+    <p class="no-print"><a href="/noc">All alerts →</a></p>
+  </section>
+</div>
   <section class="card" id="deployment">
     <h2>Deployment pipeline</h2>
     <p class="muted small">Where every purchased asset is between order and service.</p>
@@ -64,7 +83,7 @@
   </section>
 </div>
 
-{# ---------------- Inventory charts ---------------- #}
+<div class="board-view" data-view="inventory">
 <h2 class="section-title">Asset inventory</h2>
 <div class="grid grid-2">
   <section class="card">
@@ -124,8 +143,9 @@
     </table></div>
   </section>
 </div>
+</div>
 
-{# ---------------- Health by region / branch ---------------- #}
+<div class="board-view" data-view="health">
 <h2 class="section-title">Service health</h2>
 <section class="card">
   <h2>Assets by region</h2>
@@ -174,8 +194,9 @@
     </tbody>
   </table></div>
 </section>
+</div>
 
-{# ---------------- Operations & risk ---------------- #}
+<div class="board-view" data-view="operations">
 <h2 class="section-title">Operations &amp; risk</h2>
 <div class="grid grid-main">
   <section class="card">
@@ -211,30 +232,7 @@
       <div class="actions small"><span class="badge"><span class="dot {{ 'good' if c.healthy else 'critical' }}"></span>{{ "Reporting" if c.healthy else "Silent" }}</span>{{ c.c.name }} <span class="muted">{{ c.c.last_heartbeat_at | ago }}</span></div>
     {% else %}<p class="muted small">No collectors registered.</p>{% endfor %}
   </section>
-  <section class="card">
-    <h2>Open alerts</h2>
-    {% if s.open_alerts %}
-    <table><tbody>
-      {% for a in s.open_alerts %}
-      <tr><td>{{ sev(a.severity) }}</td><td><a href="/alerts/{{ a.id }}">{{ a.title }}</a><div class="muted small">{{ a.detected_at | ago }} · {{ a.status.title() }}</div></td></tr>
-      {% endfor %}
-    </tbody></table>
-    {% else %}<p class="muted">No open alerts.</p>{% endif %}
-    <p class="no-print"><a href="/noc">All alerts →</a></p>
-  </section>
-</div>
-
-<div class="grid grid-3">
-  <section class="card"><h2>Mean time to detect (min)</h2><p class="muted small">Monitoring-detected outages, weekly</p>
-    {{ line_chart(s.trend, "week", "mttd", " min", 5, "Mean time to detect per week") }}</section>
-  <section class="card"><h2>Mean time to restore (min)</h2><p class="muted small">Failure to resolution, weekly</p>
-    {{ line_chart(s.trend, "week", "mttr", " min", None, "Mean time to restore per week") }}</section>
-  <section class="card"><h2>Asset age profile</h2><p class="muted small">Years since installation</p>
-    {{ column_chart(s.age_profile, "label", "count", " assets", "Assets by age") }}</section>
-</div>
-
-<div class="grid grid-2">
-  <section class="card" id="warranty">
+<section class="card" id="warranty">
     <h2>Warranty / end of support due in 90 days <span class="muted small">({{ s.due_count }})</span></h2>
     {% if s.due %}
     <div class="table-wrap"><table>
@@ -244,7 +242,16 @@
     </table></div>
     {% else %}<p class="muted">Nothing due.</p>{% endif %}
   </section>
-  <section class="card">
+</div>
+<div class="grid grid-3">
+  <section class="card"><h2>Mean time to detect (min)</h2><p class="muted small">Monitoring-detected outages, weekly</p>
+    {{ line_chart(s.trend, "week", "mttd", " min", 5, "Mean time to detect per week") }}</section>
+  <section class="card"><h2>Mean time to restore (min)</h2><p class="muted small">Failure to resolution, weekly</p>
+    {{ line_chart(s.trend, "week", "mttr", " min", None, "Mean time to restore per week") }}</section>
+  <section class="card"><h2>Asset age profile</h2><p class="muted small">Years since installation</p>
+    {{ column_chart(s.age_profile, "label", "count", " assets", "Assets by age") }}</section>
+</div>
+<section class="card">
     <h2>Audit score per branch</h2>
     <p class="muted small">Data quality: completeness of mandatory fields (60%) + last physical audit accuracy (40%)</p>
     <div class="grid grid-2">

@@ -13,7 +13,19 @@ from itam.rbac import can, can_see_branch, scope_branches
 from itam.services import NotFound, ServiceError
 from itam.services import changes as change_svc
 from itam.services import requests as req_svc
-from itam.web.deps import DB, CurrentUser, csrf_protect, get_or_404, opt_float, opt_int, opt_str, redirect, render, require
+from itam.web.deps import (
+    DB,
+    CurrentUser,
+    csrf_protect,
+    get_or_404,
+    mix,
+    opt_float,
+    opt_int,
+    opt_str,
+    redirect,
+    render,
+    require,
+)
 
 router = APIRouter(dependencies=[Depends(csrf_protect)])
 
@@ -28,7 +40,14 @@ def request_list(request: Request, db: DB, user: CurrentUser, status: str = ""):
     if status:
         q = q.where(EquipmentRequest.status == status)
     rows = db.execute(q.order_by(EquipmentRequest.id.desc()).limit(300)).scalars().all()
-    return render(request, "requests.html", user, rows=rows, status=status, statuses=list(RequestStatus))
+    from sqlalchemy import func
+
+    from itam.web.mixes import REQUEST_STATUS
+
+    counts = dict(db.execute(select(EquipmentRequest.status, func.count(EquipmentRequest.id))
+                             .where(EquipmentRequest.branch_id.in_(branch_ids)).group_by(EquipmentRequest.status)).all())
+    return render(request, "requests.html", user, rows=rows, status=status, statuses=list(RequestStatus),
+                  status_mix=mix(counts, REQUEST_STATUS, "/requests?status={key}", status))
 
 
 @router.get("/requests/new")
@@ -128,7 +147,14 @@ def change_list(request: Request, db: DB, user: CurrentUser, view: str = "open")
     rows = db.execute(q.order_by(ChangeRequest.id.desc()).limit(300)).scalars().all()
     if view == "mine":
         rows = [c for c in rows if change_svc.can_approve(user, c)[0]]
-    return render(request, "changes.html", user, rows=rows, view=view)
+    from sqlalchemy import func
+
+    from itam.web.mixes import CHANGE_STATUS
+
+    counts = dict(db.execute(select(ChangeRequest.status, func.count(ChangeRequest.id)).where(
+        ChangeRequest.from_branch_id.in_(branch_ids) | ChangeRequest.to_branch_id.in_(branch_ids))
+        .group_by(ChangeRequest.status)).all())
+    return render(request, "changes.html", user, rows=rows, view=view, status_mix=mix(counts, CHANGE_STATUS))
 
 
 @router.get("/changes/new")

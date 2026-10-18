@@ -31,6 +31,7 @@ from itam.services.audits import asset_completeness
 from itam.services.discovery import resolve_exception
 from itam.web.deps import (
     DB,
+    mix,
     CurrentUser,
     csrf_protect,
     get_or_404,
@@ -111,8 +112,12 @@ def asset_list(request: Request, db: DB, user: CurrentUser, page: int = 1):
     rows = db.execute(q.offset((max(page, 1) - 1) * PAGE_SIZE).limit(PAGE_SIZE)).scalars().all()
     regions = db.execute(select(Region).order_by(Region.code)).scalars().all()
     qs = "&".join(f"{k}={v}" for k, v in params.items() if k != "page" and v)
+    from itam.web.mixes import ASSET_STATUS
+
+    counts = dict(db.execute(scope_assets(user, select(Asset.status, func.count(Asset.id)).group_by(Asset.status))).all())
+    status_mix = mix(counts, ASSET_STATUS, "/assets?status={key}", params.get("status"))
     return render(request, "assets.html", user, assets=rows, total=total, page=max(page, 1), page_size=PAGE_SIZE,
-                  params=params, regions=regions, qs=qs)
+                  params=params, regions=regions, qs=qs, status_mix=status_mix)
 
 
 @router.get("/assets/export.csv")

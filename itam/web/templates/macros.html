@@ -1,6 +1,30 @@
 {% macro nav_link(href, label, path, count=None) -%}
+{%- set icons = {
+  "/dashboard": "M3 13h8V3H3zM13 21h8V11h-8zM3 21h8v-6H3zM13 3v6h8V3z",
+  "/noc": "M3 12h4l3-8 4 16 3-8h4",
+  "/kpis": "M4 20V10M10 20V4M16 20v-7M22 20H2",
+  "/assets": "M21 8l-9-5-9 5 9 5 9-5zM3 8v8l9 5 9-5V8M12 13v8",
+  "/branches": "M3 21h18M5 21V9l7-5 7 5v12M9 21v-6h6v6",
+  "/requests": "M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2 2 2 0 00-2-2h-2a2 2 0 00-2 2zM9 13h6M9 17h4",
+  "/changes": "M7 7h13l-3-3M17 17H4l3 3",
+  "/shipments": "M3 6h11v10H3zM14 10h4l3 3v3h-7M7 19a2 2 0 100-4 2 2 0 000 4zM17 19a2 2 0 100-4 2 2 0 000 4z",
+  "/blueprint": "M4 4h16v16H4zM4 10h16M10 4v16",
+  "/exceptions": "M12 3l10 18H2L12 3zM12 10v4M12 17v.5",
+  "/audits": "M9 11l3 3 8-8M20 12v7a2 2 0 01-2 2H6a2 2 0 01-2-2V5a2 2 0 012-2h9",
+  "/data-quality": "M12 21a9 9 0 100-18 9 9 0 000 18zM12 12l5-3",
+  "/reconciliation": "M3 7h18v10H3zM12 15a3 3 0 100-6 3 3 0 000 6z",
+  "/controls": "M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6l8-3zM9 12l2 2 4-4",
+  "/audit-log": "M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01",
+  "/rollout": "M5 21V4M5 4h11l-2 4 2 4H5",
+  "/admin/users": "M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2M9 11a4 4 0 100-8 4 4 0 000 8zM22 21v-2a4 4 0 00-3-3.9M16 3.1a4 4 0 010 7.8",
+  "/admin/collectors": "M5 12a7 7 0 0114 0M8.5 12a3.5 3.5 0 017 0M12 12v9",
+  "/admin/read-points": "M4 7V5a1 1 0 011-1h2M17 4h2a1 1 0 011 1v2M20 17v2a1 1 0 01-1 1h-2M7 20H5a1 1 0 01-1-1v-2M7 12h10",
+  "/admin/reference": "M4 19.5A2.5 2.5 0 016.5 17H20V3H6.5A2.5 2.5 0 004 5.5v14zM20 17v4H6.5",
+  "/admin/notifications": "M4 4h16v12H5.2L4 17.2zM8 9h8M8 12h5",
+  "/admin/jobs": "M12 21a9 9 0 100-18 9 9 0 000 18zM12 7v5l3 2",
+} -%}
 <a href="{{ href }}" class="{{ 'active' if path == href or (href != '/' and path.startswith(href ~ '/')) else '' }}">
-  <span>{{ label }}</span>{% if count %}<span class="badge">{{ count }}</span>{% endif %}
+  <span class="nav-label"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="{{ icons.get(href, icons['/assets']) }}"/></svg>{{ label }}</span>{% if count %}<span class="badge">{{ count }}</span>{% endif %}
 </a>
 {%- endmacro %}
 
@@ -136,6 +160,13 @@
   "money": "M3 7h18v10H3zM12 15a3 3 0 100-6 3 3 0 000 6z",
   "clock": "M12 21a9 9 0 100-18 9 9 0 000 18zM12 7v5l3 2",
   "shield": "M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6l8-3z",
+  "target": "M12 21a9 9 0 100-18 9 9 0 000 18zM12 17a5 5 0 100-10 5 5 0 000 10zM12 13a1 1 0 100-2 1 1 0 000 2z",
+  "search": "M11 19a8 8 0 100-16 8 8 0 000 16zM21 21l-4.3-4.3",
+  "pin": "M12 21s-7-6.2-7-12a7 7 0 0114 0c0 5.8-7 12-7 12zM12 11a2 2 0 100-4 2 2 0 000 4z",
+  "flag": "M5 21V4M5 4h11l-2 4 2 4H5",
+  "layers": "M12 3l9 5-9 5-9-5 9-5zM3 13l9 5 9-5",
+  "gauge": "M12 21a9 9 0 110-18 9 9 0 010 18zM12 12l4-4",
+  "list": "M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01",
 } -%}
 <svg class="kpi-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="{{ paths.get(name, paths.box) }}"/></svg>
 {%- endmacro %}
@@ -217,4 +248,21 @@
     <rect class="track" width="100" height="5" rx="2.5"/><rect class="fill" width="{{ [sla.pct, 2] | max }}" height="5" rx="2.5"/></svg>
   <span class="sla-time">{% if sla.remaining_min is none %}responded in {{ sla.used_min | duration }}{% elif sla.state == "breached" %}{{ (sla.used_min - sla.target_min) | duration }} over target{% else %}{{ sla.remaining_min | duration }} left of {{ sla.target_min | duration }}{% endif %}</span>{% endif %}
 </span>
+{%- endmacro %}
+
+
+{# Status distribution: one stacked bar plus a chip per status (count, share; a filter link when href is set). #}
+{% macro mix_bar(m, title="", aria="") -%}
+<div class="mix">
+  {% if title %}<div class="mix-head"><span class="mix-title">{{ title }}</span><span class="mix-total">{{ "{:,}".format(m.total) }}</span></div>{% endif %}
+  <svg class="mix-bar" viewBox="0 0 100 8" preserveAspectRatio="none" role="img" aria-label="{{ aria or title }}">
+    <rect class="mix-track" x="0" y="0" width="100" height="8" rx="4"/>
+    {% for s in m.segments %}{% if s.n %}<rect class="mix-seg tone-{{ s.tone }}" x="{{ s.x }}" y="0" width="{{ s.w }}" height="8" data-tip="{{ s.label }}: {{ '{:,}'.format(s.n) }} ({{ s.pct }}%)"/>{% endif %}{% endfor %}
+  </svg>
+  <div class="mix-chips">{% for s in m.segments %}
+    {% if s.href %}<a class="mix-chip{{ ' active' if s.active }}{{ ' zero' if not s.n }}" href="{{ s.href }}">{% else %}<span class="mix-chip{{ ' zero' if not s.n }}">{% endif %}
+      <span class="dot tone-{{ s.tone }}"></span><span class="mix-label">{{ s.label }}</span><strong>{{ "{:,}".format(s.n) }}</strong>{% if m.total %}<small>{{ s.pct }}%</small>{% endif %}
+    {% if s.href %}</a>{% else %}</span>{% endif %}
+  {% endfor %}</div>
+</div>
 {%- endmacro %}
