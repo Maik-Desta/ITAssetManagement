@@ -13,14 +13,18 @@ from fastapi import APIRouter, Body, Depends, Header, Query, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
-from itam.models import Alert, Asset, Branch, Collector, ControlException, User
-from itam.rbac import can_see_branch, scope_assets, scope_branches
+from itam.models import Alert, Asset, Branch, Collector, ControlException, EquipmentRequest, Shipment, User
+from itam.rbac import can, can_see_branch, scope_assets, scope_branches
 from itam.security import hash_api_key
 from itam.services import NotFound, PermissionDenied
+from itam.services import catalogue as cat_svc
 from itam.services import dashboard as dash_svc
 from itam.services import discovery as disc_svc
 from itam.services import integrations as int_svc
 from itam.services import monitoring as mon_svc
+from itam.services import requests as req_svc
+from itam.services import rfid as rfid_svc
+from itam.services import security as sec_svc
 from itam.services.assets import register_asset
 from itam.web.deps import DB, csrf_protect, current_user
 
@@ -97,6 +101,46 @@ class DiscoveryIn(BaseModel):
     devices: list[DiscoveredDevice]
 
 
+class RfidReadIn(BaseModel):
+    read_point: str = Field(..., description="Read-point code, e.g. HQ-DISPATCH")
+    epc: str = Field(..., description="96-bit EPC as 24 hex characters")
+    event: str = Field("SEEN", description="SEEN, ARRIVED, LEFT, NOT_SEEN")
+    read_at: datetime | None = None
+    cycles_missed: int | None = Field(None, description="Cabinet readers: consecutive read cycles without the tag")
+    branch_code: str | None = Field(None, description="Handhelds: the branch where the read was taken")
+    location_id: int | None = None
+    rack_u: str | None = None
+    operator: str | None = Field(None, description="Handheld user name")
+
+
+class ReaderHeartbeatIn(BaseModel):
+    read_points: list[str]
+
+
+class SecurityEventIn(BaseModel):
+    branch_code: str
+    kind: str = Field(..., description="BADGE, DOOR_OPEN, MOTION, DEVICE_TAMPER")
+    occurred_at: datetime | None = None
+    door: str | None = None
+    badge_id: str | None = None
+    authorised: bool | None = Field(None, description="Access control: badge holder authorised for this door")
+    device_ref: str | None = None
+    camera_ref: str | None = None
+    message: str | None = None
+
+
+class ClipArchivedIn(BaseModel):
+    sha256: str
+    url: str | None = None
+    vms_ref: str | None = None
+
+
+class ShippingNoticeIn(BaseModel):
+    asn_ref: str
+    serials: list[str]
+    eta: date | None = None
+
+
 class AssetIn(BaseModel):
     branch_code: str
     asset_type: str
@@ -122,6 +166,8 @@ def asset_json(a: Asset) -> dict:
         "last_seen_at": a.last_seen_at, "install_date": a.install_date, "warranty_end": a.effective_warranty_end,
         "eol_date": a.eol_date, "eos_date": a.eos_date, "custodian": a.custodian.full_name if a.custodian else None,
         "finance_asset_ref": a.finance_asset_ref, "pci_scope": a.pci_scope,
+        "rfid_epc": a.rfid_epc, "rfid_verified_at": a.rfid_verified_at, "last_rfid_read_at": a.last_rfid_read_at,
+        "staged_at": a.staged_at, "suspected_removal_at": a.suspected_removal_at,
     }
 
 
@@ -163,6 +209,33 @@ def collector_discovery(db: DB, collector: CollectorAuth, payload: DiscoveryIn):
                                     [d.model_dump() for d in payload.devices], payload.run_at)
     return {"branch": payload.branch_code, "seen": run.devices_seen, "matched": run.matched, "rogue": run.rogue,
             "not_seen": run.not_seen, "mismatched": run.mismatched}
+
+
+# --- RFID middleware, security systems and VMS (slides 20, 29, 31-33) ------------------------------
+
+
+@router.post("/rfid/reads", tags=["rfid"])
+def rfid_reads(db: DB, collector: CollectorAuth, reads: list[RfidReadIn] = Body(...)):
+    """Filtered, de-duplicated tag events from the RFID middleware. Every read is stored with its outcome."""
+    return rfid_svc.ingest_reads(db, collector, [r.model_dump() for r in reads])
+
+
+@router.post("/rfid/heartbeat", tags=["rfid"])
+def rfid_heartbeat(db: DB, collector: CollectorAuth, payload: ReaderHeartbeatIn):
+    return {"read_points": rfid_svc.heartbeat(db, collector, payload.read_points)}
+
+
+@router.post("/security/events", tags=["security"])
+def security_events(db: DB, collector: CollectorAuth, events: list[SecurityEventIn] = Body(...)):
+    """Badge, door-contact, motion and device-health events; correlated with tickets, badges and change windows."""
+    return sec_svc.ingest_events(db, collector, [e.model_dump() for e in events])
+
+
+@router.post("/security/clips/{clip_id}", tags=["security"])
+def security_clip_archived(db: DB, collector: CollectorAuth, clip_id: int, payload: ClipArchivedIn):
+    """VMS callback once the clip is exported: the hash is kept as evidence."""
+    clip = sec_svc.archive_clip(db, clip_id, sha256=payload.sha256, url=payload.url, vms_ref=payload.vms_ref)
+    return {"clip": clip.id, "status": clip.status, "sha256": clip.sha256}
 
 
 # --- read / act API for signed-in users ------------------------------------------------------------
@@ -266,3 +339,40 @@ def kpis(db: DB, user: ApiUser):
 @router.post("/integrations/hr/leavers", tags=["integrations"], dependencies=[Depends(csrf_protect)])
 def hr_leavers(db: DB, user: ApiUser, identifiers: list[str] = Body(..., embed=True)):
     return int_svc.process_hr_leavers(db, user, identifiers)
+
+
+@router.post("/requests/{reference}/shipping-notice", tags=["logistics"], dependencies=[Depends(csrf_protect)],
+             status_code=201)
+def shipping_notice(db: DB, user: ApiUser, reference: str, payload: ShippingNoticeIn):
+    """Vendor shipping notice (ASN) with serials, e.g. relayed from the vendor EDI / API by Procurement."""
+    req = db.execute(select(EquipmentRequest).where(EquipmentRequest.reference == reference.upper())).scalar_one_or_none()
+    if req is None:
+        raise NotFound("Request not found")
+    asn = req_svc.record_shipping_notice(db, user, req, payload.asn_ref, payload.serials, payload.eta)
+    return {"asn_ref": asn.asn_ref, "request": req.reference, "expected": len(asn.serials)}
+
+
+@router.get("/shipments", tags=["logistics"])
+def list_shipments(db: DB, user: ApiUser, status: str | None = None):
+    if not can(user, "shipment.view"):
+        raise PermissionDenied("Not permitted")
+    branch_ids = db.execute(scope_branches(user, select(Branch.id))).scalars().all()
+    q = select(Shipment).where(Shipment.to_branch_id.in_(branch_ids) | Shipment.from_branch_id.in_(branch_ids))
+    if status:
+        q = q.where(Shipment.status == status.upper())
+    return [{"reference": s.reference, "status": s.status, "from": s.from_branch.code, "to": s.to_branch.code,
+             "seal_number": s.seal_number, "carrier": s.carrier, "eta": s.eta, "dispatched_at": s.dispatched_at,
+             "received_at": s.received_at, "variance": s.variance_note,
+             "manifest": [{"asset_number": i.asset.asset_number, "epc": i.asset.rfid_epc, "result": i.result}
+                          for i in s.items]}
+            for s in db.execute(q.order_by(Shipment.id.desc()).limit(500)).scalars()]
+
+
+@router.get("/blueprint", tags=["reporting"])
+def blueprint(db: DB, user: ApiUser):
+    if not can(user, "blueprint.view"):
+        raise PermissionDenied("Not permitted")
+    branches = db.execute(scope_branches(user, select(Branch).order_by(Branch.code))).scalars().all()
+    return [{"branch_code": r["branch"].code, "compliant": r["compliant"], "short": r["short"], "excess": r["excess"],
+             "non_catalogue": r["non_catalogue"], "unapproved_devices": r["unapproved"], "lines": r["lines"]}
+            for r in cat_svc.branch_compliance(db, branches)]

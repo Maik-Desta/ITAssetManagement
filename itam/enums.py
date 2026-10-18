@@ -125,10 +125,25 @@ class AlertCategory(StrEnum):
     WARRANTY_EXPIRY = "WARRANTY_EXPIRY"
     END_OF_LIFE = "END_OF_LIFE"
     COLLECTOR_OFFLINE = "COLLECTOR_OFFLINE"
+    UNAPPROVED_DEVICE = "UNAPPROVED_DEVICE"  # branch-bought / non-catalogue device (e.g. a modem)
+    # Physical security (slides 31-33)
+    SUSPECTED_REMOVAL = "SUSPECTED_REMOVAL"  # tagged asset left through an exit portal without a ticket
+    CABINET_TAG_MISSING = "CABINET_TAG_MISSING"  # cabinet reader no longer sees a tag
+    CABINET_DOOR = "CABINET_DOOR"  # door opened without an authorised badge or after hours
+    INTRUSION = "INTRUSION"  # motion after hours
+    SECURITY_DEVICE_TAMPER = "SECURITY_DEVICE_TAMPER"  # RFID reader or camera offline, blocked or moved
+    # Logistics (slides 27-28)
+    SHIPMENT_VARIANCE = "SHIPMENT_VARIANCE"
+    SHIPMENT_OVERDUE = "SHIPMENT_OVERDUE"
+    UNEXPLAINED_EXIT = "UNEXPLAINED_EXIT"  # asset read at the staging exit without being on a manifest
 
 
 # Categories that represent a service outage (used for MTTD/MTTR and proactive detection rate).
 OUTAGE_CATEGORIES = {AlertCategory.BRANCH_OFFLINE, AlertCategory.DEVICE_DOWN, AlertCategory.REDUNDANCY_LOST}
+# Physical-security alarms: unacknowledged alarms escalate every 5 minutes (slide 31), not per response target.
+SECURITY_CATEGORIES = {AlertCategory.SUSPECTED_REMOVAL, AlertCategory.CABINET_TAG_MISSING, AlertCategory.CABINET_DOOR,
+                       AlertCategory.INTRUSION, AlertCategory.SECURITY_DEVICE_TAMPER, AlertCategory.UNEXPLAINED_EXIT}
+SECURITY_ESCALATION_MINUTES = 5
 
 
 class AlertSource(StrEnum):
@@ -136,6 +151,8 @@ class AlertSource(StrEnum):
     DISCOVERY = "DISCOVERY"
     SCHEDULER = "SCHEDULER"
     USER_REPORT = "USER_REPORT"
+    RFID = "RFID"
+    SECURITY = "SECURITY"  # access control, door contacts, motion sensors, cameras
 
 
 class ChangeType(StrEnum):
@@ -187,6 +204,10 @@ class ExceptionType(StrEnum):
     IT_NOT_IN_FINANCE = "IT_NOT_IN_FINANCE"
     FINANCE_MISMATCH = "FINANCE_MISMATCH"
     CUSTODIAN_LEFT = "CUSTODIAN_LEFT"
+    UNAPPROVED_DEVICE = "UNAPPROVED_DEVICE"  # device not in the approved catalogue (e.g. branch-bought modem)
+    GOODS_RECEIPT_VARIANCE = "GOODS_RECEIPT_VARIANCE"  # short / wrong delivery against PO and shipping notice
+    SHIPMENT_VARIANCE = "SHIPMENT_VARIANCE"  # branch receipt does not match the manifest, or seal broken
+    RFID_MISMATCH = "RFID_MISMATCH"  # a tag read that does not match the expected state
 
 
 class ExceptionSource(StrEnum):
@@ -194,6 +215,8 @@ class ExceptionSource(StrEnum):
     PHYSICAL_AUDIT = "PHYSICAL_AUDIT"
     FINANCE_RECON = "FINANCE_RECON"
     HR_FEED = "HR_FEED"
+    RFID = "RFID"
+    LOGISTICS = "LOGISTICS"
 
 
 class ExceptionStatus(StrEnum):
@@ -235,11 +258,11 @@ ROLLOUT_CHECKLIST: dict[RolloutStage, list[str]] = {
         "Pull existing records for the branch",
         "Confirm WAN, management VLAN and firewall rules",
         "Book access with branch manager",
-        "Pre-print QR tags",
+        "Pre-encode RFID + QR labels",
     ],
     RolloutStage.ON_SITE: [
         "Physical count of every device",
-        "Apply / verify tags; photo of racks",
+        "Apply / verify RFID + QR labels; handheld sweep",
         "Enable SNMPv3, syslog, NTP",
         "Record location, rack and custodian",
     ],
@@ -250,6 +273,7 @@ ROLLOUT_CHECKLIST: dict[RolloutStage, list[str]] = {
     ],
     RolloutStage.SIGN_OFF: [
         "Branch manager attests custody",
+        "Branch status 'Live' on dashboard",
         "Lessons learned captured in playbook",
     ],
 }
@@ -285,3 +309,149 @@ class NotificationStatus(StrEnum):
     OUTBOX_ONLY = "OUTBOX_ONLY"
     UNREAD = "UNREAD"  # in-app
     READ = "READ"  # in-app
+
+
+# ---------------------------------------------------------------------------
+# Standard branch blueprint and approved catalogue (slides 3, 9, 26, 40, 68)
+# ---------------------------------------------------------------------------
+
+
+class BranchTier(StrEnum):
+    """Security tier (slide 33). Tier A also gets an exit portal, a cabinet reader and integrated cameras."""
+
+    A = "A"  # data centre, staging, critical branches
+    B = "B"  # other branches
+
+
+TIER_LABELS = {BranchTier.A: "Tier A — critical", BranchTier.B: "Tier B — standard"}
+
+# Standard kit per branch. Anything else needs a Design Authority exception.
+BRANCH_BLUEPRINT: dict[AssetType, int] = {
+    AssetType.RTR: 2,  # primary + backup WAN
+    AssetType.SWT: 2,
+    AssetType.FWL: 1,
+    AssetType.SRV: 1,
+    AssetType.UPS: 1,
+    AssetType.ATM: 2,
+    AssetType.EUD: 6,
+    AssetType.ENV: 1,  # comms-room environmental sensor
+}
+# Discovered device types that are never allowed on the branch network (bought locally, cannot be patched).
+FORBIDDEN_DEVICE_TYPES = {"MODEM", "HOTSPOT", "MIFI", "CONSUMER_ROUTER", "PERSONAL_AP"}
+
+
+# ---------------------------------------------------------------------------
+# RFID (slides 20, 29, 54)
+# ---------------------------------------------------------------------------
+
+
+class ReadPointKind(StrEnum):
+    DOCK_IN = "DOCK_IN"  # goods-in dock portal (staging)
+    REGISTRATION = "REGISTRATION"  # printer-encoder + verify read
+    CAGE = "CAGE"  # secure store fixed shelf reader
+    DISPATCH = "DISPATCH"  # dispatch dock exit portal (staging)
+    BRANCH_RECEIPT = "BRANCH_RECEIPT"  # handheld at branch delivery
+    INSTALL = "INSTALL"  # handheld read at the rack position
+    CABINET = "CABINET"  # fixed comms-cabinet reader (critical branches)
+    EXIT_PORTAL = "EXIT_PORTAL"  # staff / service exit portal (DC and critical branches)
+    AUDIT_SWEEP = "AUDIT_SWEEP"  # handheld quarterly / annual sweep
+
+
+READ_POINT_LABELS = {
+    ReadPointKind.DOCK_IN: "Goods-in dock (staging)",
+    ReadPointKind.REGISTRATION: "Registration bench",
+    ReadPointKind.CAGE: "Secure store / cage",
+    ReadPointKind.DISPATCH: "Dispatch dock",
+    ReadPointKind.BRANCH_RECEIPT: "Branch receipt (handheld)",
+    ReadPointKind.INSTALL: "Install / rack (handheld)",
+    ReadPointKind.CABINET: "Comms cabinet",
+    ReadPointKind.EXIT_PORTAL: "Exit portal",
+    ReadPointKind.AUDIT_SWEEP: "Audit sweep (handheld)",
+}
+
+
+class ReadEvent(StrEnum):
+    """What the RFID middleware reports after filtering and de-duplicating raw reads."""
+
+    SEEN = "SEEN"
+    ARRIVED = "ARRIVED"
+    LEFT = "LEFT"
+    NOT_SEEN = "NOT_SEEN"
+
+
+class ReadOutcome(StrEnum):
+    UPDATED = "UPDATED"  # the record was updated (always logged)
+    CONFIRMED = "CONFIRMED"  # the read matched the expected state
+    EXCEPTION = "EXCEPTION"  # mismatch with the expected state: exception and/or alarm raised
+    UNKNOWN_TAG = "UNKNOWN_TAG"
+
+
+# ---------------------------------------------------------------------------
+# Staging and logistics (slides 27-28, 48)
+# ---------------------------------------------------------------------------
+
+
+class ShipmentStatus(StrEnum):
+    PACKED = "PACKED"
+    IN_TRANSIT = "IN_TRANSIT"
+    DELIVERED = "DELIVERED"
+    VARIANCE = "VARIANCE"  # delivered with missing / unexpected items or a broken seal
+    CANCELLED = "CANCELLED"
+
+
+class ShipmentItemResult(StrEnum):
+    PENDING = "PENDING"
+    MATCHED = "MATCHED"
+    MISSING = "MISSING"
+
+
+# Burn-in before dispatch (slide 27: golden config, firmware, SNMPv3, NTP; 24-48 h burn-in).
+MIN_BURN_IN_HOURS = 24
+
+
+# ---------------------------------------------------------------------------
+# Physical security (slides 31-33)
+# ---------------------------------------------------------------------------
+
+
+class SecurityEventKind(StrEnum):
+    BADGE = "BADGE"  # access-control badge event at a door
+    DOOR_OPEN = "DOOR_OPEN"  # cabinet / comms-room door contact
+    MOTION = "MOTION"
+    DEVICE_TAMPER = "DEVICE_TAMPER"  # reader or camera offline, view blocked or moved
+
+
+class ClipStatus(StrEnum):
+    REQUESTED = "REQUESTED"  # bookmark sent to the VMS
+    ARCHIVED = "ARCHIVED"  # clip received, hashed and kept as evidence
+    NOT_CONFIGURED = "NOT_CONFIGURED"  # no VMS integration: request recorded only
+
+
+# ---------------------------------------------------------------------------
+# Operating model (slides 5, 43, 48-51): who operates each automated order-lifecycle stage
+# ---------------------------------------------------------------------------
+
+
+class OperatingModel(StrEnum):
+    IN_HOUSE = "IN_HOUSE"
+    SISTER_COMPANY = "SISTER_COMPANY"
+    OUTSOURCED = "OUTSOURCED"
+
+
+OPERATING_MODEL_LABELS = {
+    OperatingModel.IN_HOUSE: "Option 1 — own and manage inside the bank",
+    OperatingModel.SISTER_COMPANY: "Option 2 — sister company (recommended)",
+    OperatingModel.OUTSOURCED: "Option 3 — completely outsource",
+}
+
+ORDER_STAGES = ["Order approval", "Order info sharing", "Arrival at centre", "Registration & tagging", "Shipment",
+                "Received", "Installation", "Live & protected"]
+
+STAGE_OPERATORS: dict[OperatingModel, list[str]] = {
+    OperatingModel.IN_HOUSE: ["Bank", "Bank ITAM Office", "Bank ITAM Office", "Bank ITAM Office", "Bank + courier",
+                              "Bank branch manager", "Bank regional IT", "Bank NOC + SOC"],
+    OperatingModel.SISTER_COMPANY: ["Bank", "Sister co.", "Sister co.", "Sister co.", "Sister co.",
+                                    "Bank branch manager", "Sister co.", "Sister co. NOC + Bank SOC"],
+    OperatingModel.OUTSOURCED: ["Bank", "Provider", "Provider", "Provider", "Provider", "Bank branch manager",
+                                "Provider", "Provider NOC + Bank SOC"],
+}

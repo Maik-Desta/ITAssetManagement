@@ -55,6 +55,16 @@
       <button class="btn" type="submit">Resolve alert</button></form>
     {% endif %}
   </section>
+  {% if alert.clips %}
+  <section class="card">
+    <h2>Video evidence</h2>
+    <table><thead><tr><th>Camera</th><th>Window (UTC)</th><th>Status</th><th>SHA-256</th></tr></thead><tbody>
+    {% for c in alert.clips %}<tr><td class="mono small">{{ c.camera_ref }}</td><td class="nowrap small">{{ c.start_at | dt("%H:%M:%S") }} – {{ c.end_at | dt("%H:%M:%S") }}</td>
+      <td>{% if c.status == "ARCHIVED" and c.url %}<a href="{{ c.url }}" rel="noopener">archived</a>{% else %}{{ c.status.replace("_", " ").lower() }}{% endif %}</td>
+      <td class="mono small">{{ (c.sha256[:16] ~ "…") if c.sha256 else "—" }}</td></tr>{% endfor %}</tbody></table>
+    <p class="small muted">30 s before / 60 s after the event, from the NVR buffer. Video access is role-based; retention follows data-protection law.</p>
+  </section>
+  {% endif %}
   <section class="card">
     <h2>Recent monitoring events</h2>
     <table><thead><tr><th>Occurred</th><th>Kind</th><th>Value</th><th>Message</th></tr></thead><tbody>

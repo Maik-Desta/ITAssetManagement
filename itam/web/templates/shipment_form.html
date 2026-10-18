@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% from "macros.html" import csrf, status_badge with context %}
+{% block title %}Pack shipment{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>Pack shipment</h1><p>From {{ store.code }} {{ store.name }}. Items must have a verified RFID tag; network kit must be staged – ready (golden config and burn-in). Transfers need an approved change.</p></div></div>
+<section class="card">
+  <form method="get" action="/shipments/new" class="actions">
+    <label for="to">Destination</label>
+    <select id="to" name="to" required>{% if not dest %}<option value="">Choose…</option>{% endif %}{% for b in branches %}<option value="{{ b.id }}" {{ "selected" if dest and dest.id == b.id }}>{{ b.code }} {{ b.name }}</option>{% endfor %}</select>
+    <button class="btn" type="submit">Show items for this branch</button></form>
+</section>
+{% if dest %}
+<section class="card">
+  <h2>Install order for {{ dest.code }} {{ dest.name }}</h2>
+  {% if candidates %}
+  <form method="post" action="/shipments/new" class="stack">{{ csrf() }}
+    <input type="hidden" name="to_branch_id" value="{{ dest.id }}">
+    <div class="table-wrap"><table><thead><tr><th></th><th>Asset</th><th>Type</th><th>Serial</th><th>Status</th><th>Ready?</th></tr></thead><tbody>
+    {% for a, why in candidates %}<tr><td>{% if not why %}<input type="checkbox" name="asset_id" value="{{ a.id }}" checked aria-label="Ship {{ a.asset_number }}">{% endif %}</td>
+      <td><a class="mono" href="/assets/{{ a.id }}">{{ a.asset_number }}</a></td><td>{{ TYPE_LABELS[a.asset_type] }}</td><td class="mono small">{{ a.serial_number }}</td>
+      <td>{{ status_badge(a.status) }}</td><td class="small {{ 'pass' if not why else 'warn-text' }}">{{ "ready" if not why else why }}</td></tr>{% endfor %}
+    </tbody></table></div>
+    <div class="form-grid">
+      <div class="field"><label for="seal">Tamper-seal number</label><input id="seal" name="seal_number" required></div>
+      <div class="field"><label for="carrier">Carrier</label><input id="carrier" name="carrier" placeholder="Courier or bank van"></div>
+      <div class="field"><label for="eta">Delivery date (ETA)</label><input id="eta" name="eta" type="date"></div>
+    </div>
+    <button class="btn primary" type="submit">Pack and create manifest</button>
+  </form>
+  {% else %}<p class="muted">Nothing in the central store is ordered for, or approved for transfer to, {{ dest.code }}.</p>{% endif %}
+</section>
+{% endif %}
+{% endblock %}

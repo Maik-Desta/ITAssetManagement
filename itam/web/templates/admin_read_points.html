@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% from "macros.html" import csrf, simple_badge with context %}
+{% block title %}RFID read points{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>RFID read points</h1><p>Fixed portals and readers (LLRP over TLS on the management VLAN) and MDM-managed handhelds. The RFID middleware posts filtered reads to <code>/api/v1/rfid/reads</code> with its regional collector key; every read updates the record automatically and is logged.</p></div></div>
+<div class="grid grid-main">
+<section class="card"><div class="table-wrap"><table>
+  <thead><tr><th>Code</th><th>Name</th><th>Type</th><th>Site</th><th>Camera</th><th>Last heartbeat</th><th>Status</th><th></th></tr></thead>
+  <tbody>{% for r in rows %}<tr><td class="mono">{{ r.code }}</td><td>{{ r.name }}</td><td>{{ kind_labels.get(r.kind, r.kind) }}</td>
+    <td>{{ r.branch.code }} {{ r.branch.name }}</td><td class="mono small">{{ r.camera_ref or "—" }}</td><td>{{ r.last_heartbeat_at | ago }}</td>
+    <td>{{ simple_badge("Enabled" if r.is_active else "Disabled", "good" if r.is_active else "") }}</td>
+    <td><form method="post" action="/admin/read-points/{{ r.id }}/toggle">{{ csrf() }}<button class="btn small" type="submit">{{ "Disable" if r.is_active else "Enable" }}</button></form></td></tr>
+  {% else %}<tr><td colspan="8" class="muted">No read points registered.</td></tr>{% endfor %}</tbody></table></div></section>
+<section class="card"><h2>Register read point</h2>
+  <form method="post" action="/admin/read-points" class="stack">{{ csrf() }}
+    <div class="field"><label for="rp_code">Code</label><input id="rp_code" name="code" placeholder="0012-EXIT" required></div>
+    <div class="field"><label for="rp_name">Name</label><input id="rp_name" name="name" placeholder="Staff exit portal" required></div>
+    <div class="field"><label for="rp_kind">Type</label><select id="rp_kind" name="kind">{% for k in kinds %}<option value="{{ k.value }}">{{ kind_labels[k.value] }}</option>{% endfor %}</select></div>
+    <div class="field"><label for="rp_branch">Site</label><select id="rp_branch" name="branch_id">{% for b in branches %}<option value="{{ b.id }}">{{ b.code }} {{ b.name }}</option>{% endfor %}</select></div>
+    <div class="field"><label for="rp_cam">VMS camera (optional)</label><input id="rp_cam" name="camera_ref" placeholder="CAM-0012-EXIT"></div>
+    <button class="btn primary" type="submit">Register</button></form>
+  <p class="small muted">Handhelds are registered once per team or region and say which branch they read in.</p></section>
+</div>
+{% endblock %}

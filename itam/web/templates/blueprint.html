@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}Branch blueprint{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>Standard branch blueprint &amp; approved catalogue</h1>
+  <p>Every branch holds the standard kit from the approved catalogue, nothing else. Branch-bought modems and other unapproved devices are found by discovery and must be removed; requests above the blueprint need the Design Authority.</p></div></div>
+<div class="tiles">
+  <div class="tile"><div class="label">Branches compliant</div><div class="value">{{ summary.compliant }} <small>/ {{ summary.branches }}</small></div><div class="sub">branches with kit registered</div></div>
+  <div class="tile"><div class="label">Unapproved devices</div><div class="value">{{ summary.unapproved }}</div><div class="sub">open exceptions (e.g. modems)</div></div>
+  <div class="tile"><div class="label">Non-catalogue kit</div><div class="value">{{ summary.non_catalogue }}</div><div class="sub">registered assets on a non-standard model</div></div>
+  <div class="tile"><div class="label">Above blueprint</div><div class="value">{{ summary.excess }}</div><div class="sub">units beyond the standard quantity</div></div>
+</div>
+<section class="card">
+  <div class="tabs"><a href="/blueprint?show=issues" class="{{ 'active' if show == 'issues' }}">Non-compliant</a><a href="/blueprint?show=all" class="{{ 'active' if show == 'all' }}">All branches</a></div>
+  <div class="table-wrap"><table><thead><tr><th>Branch</th>{% for t in blueprint %}<th class="num" title="{{ TYPE_LABELS[t.value] }}">{{ t.value }}</th>{% endfor %}<th class="num">Non-catalogue</th><th class="num">Unapproved</th><th>Status</th></tr></thead><tbody>
+  {% for r in rows %}{% set held = {} %}{% for l in r.lines %}{% set _ = held.update({l.type: l}) %}{% endfor %}
+  <tr><td class="nowrap"><a href="/branches/{{ r.branch.id }}">{{ r.branch.code }} {{ r.branch.name }}</a></td>
+    {% for t in blueprint %}{% set l = held.get(t.value) %}<td class="num {{ 'fail' if l and l.held > l.required else 'muted' if l and l.held < l.required }}">{{ l.held if l else 0 }}/{{ l.required if l else blueprint[t] }}</td>{% endfor %}
+    <td class="num {{ 'fail' if r.non_catalogue }}">{{ r.non_catalogue }}</td><td class="num {{ 'fail' if r.unapproved }}">{% if r.unapproved %}<a href="/exceptions?type=UNAPPROVED_DEVICE">{{ r.unapproved }}</a>{% else %}0{% endif %}</td>
+    <td class="nowrap">{% if not r.started %}<span class="muted">not rolled out</span>{% elif r.compliant %}<span class="pass">compliant</span>{% else %}<span class="fail">action needed</span>{% endif %}</td></tr>
+  {% else %}<tr><td colspan="{{ blueprint | length + 4 }}" class="muted">Every branch matches the blueprint.</td></tr>{% endfor %}
+  </tbody></table></div>
+  <p class="small muted">Held / required. Short quantities (grey) are normal before a branch is fully rolled out; above-blueprint (red), non-catalogue kit and unapproved devices need action.</p>
+</section>
+<section class="card">
+  <h2>Approved catalogue</h2>
+  <div class="table-wrap"><table><thead><tr><th>Type</th><th>Model</th><th>End of support</th></tr></thead><tbody>{% for m in models %}<tr><td>{{ TYPE_LABELS[m.asset_type] }}</td><td>{{ m.display }}</td><td class="small muted nowrap">{{ m.eos_date | d }}</td></tr>{% endfor %}</tbody></table></div>
+  {% if can_manage %}<p class="small"><a href="/admin/reference">Manage the catalogue</a></p>{% endif %}
+</section>
+{% endblock %}

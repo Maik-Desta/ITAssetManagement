@@ -27,6 +27,7 @@ from itam.notifications import notify_roles
 from itam.rbac import Role, can
 from itam.services import NotFound, PermissionDenied, ServiceError
 from itam.services.assets import add_history, set_status, verify_go_live
+from itam.services.catalogue import is_forbidden_device
 from itam.services.changes import authorised_change_for
 from itam.services.monitoring import (
     auto_resolve,
@@ -203,6 +204,24 @@ def ingest_discovery(db: Session, collector: Collector | None, branch_code: str,
 
         if asset is None:
             ident = (serial or mac or ip or "unknown").lower()
+            observed = {"ip": ip, "mac": mac, "serial": serial, "hostname": dev.get("hostname"),
+                        "vendor": dev.get("vendor"), "model": dev.get("model"), "type": dev.get("type")}
+            label = dev.get("hostname") or ip or mac
+            if is_forbidden_device(dev):
+                # Branch-bought modem / hotspot: outside the approved catalogue, never allow-listed (slides 3, 10).
+                run.rogue += 1
+                key = f"UNAPPROVED:{branch.id}:{ident}"
+                exc, _ = raise_exception(
+                    db, exception_type=ExceptionType.UNAPPROVED_DEVICE, source=ExceptionSource.DISCOVERY,
+                    dedup_key=key, branch=branch, observed=observed,
+                    summary=f"Unapproved {dev.get('type', 'device').lower()} at {branch.code}: {label}",
+                )
+                raise_alert(db, dedup_key=key, severity=Severity.P2, category=AlertCategory.UNAPPROVED_DEVICE,
+                            branch=branch, source=AlertSource.DISCOVERY, occurred_at=seen_at,
+                            title=f"Unapproved {dev.get('type', 'device').lower()} on the network at {branch.code}: {label}",
+                            detail=f"Exception {exc.ticket_ref}. Not in the approved catalogue or branch blueprint; "
+                                   f"cannot be patched or secured. Network access control: quarantine and remove.")
+                continue
             key = f"ROGUE:{branch.id}:{ident}"
             if is_allowlisted(db, key):
                 continue

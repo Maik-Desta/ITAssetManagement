@@ -24,6 +24,8 @@
     {{ nav_link("/branches", "Branches", path) }}
     {{ nav_link("/requests", "Equipment requests", path) }}
     {{ nav_link("/changes", "Moves & disposals", path) }}
+    {% if can(user, "shipment.view") %}{{ nav_link("/shipments", "Staging & shipments", path) }}{% endif %}
+    {% if can(user, "blueprint.view") %}{{ nav_link("/blueprint", "Branch blueprint", path) }}{% endif %}
     <div class="nav-group">Assurance</div>
     {{ nav_link("/exceptions", "Exceptions", path) }}
     {{ nav_link("/audits", "Physical audits", path) }}
@@ -33,10 +35,11 @@
     {% if can(user, "auditlog.view") %}{{ nav_link("/audit-log", "Audit trail", path) }}{% endif %}
     <div class="nav-group">Programme</div>
     {{ nav_link("/rollout", "Rollout & gates", path) }}
-    {% if can(user, "admin.users") or can(user, "reference.manage") or can(user, "notifications.view") %}
+    {% if can(user, "admin.users") or can(user, "reference.manage") or can(user, "notifications.view") or can(user, "readpoints.manage") %}
     <div class="nav-group">Administration</div>
     {% if can(user, "admin.users") %}{{ nav_link("/admin/users", "Users & roles", path) }}{% endif %}
     {% if can(user, "admin.collectors") %}{{ nav_link("/admin/collectors", "Collectors", path) }}{% endif %}
+    {% if can(user, "readpoints.manage") %}{{ nav_link("/admin/read-points", "RFID read points", path) }}{% endif %}
     {% if can(user, "reference.manage") %}{{ nav_link("/admin/reference", "Reference data", path) }}{% endif %}
     {% if can(user, "notifications.view") %}{{ nav_link("/admin/notifications", "Notification outbox", path) }}{% endif %}
     {% if can(user, "admin.users") %}{{ nav_link("/admin/jobs", "Scheduled jobs", path) }}{% endif %}

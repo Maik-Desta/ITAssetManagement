@@ -251,8 +251,15 @@ def rollout(request: Request, db: DB, user: CurrentUser):
     live_last_week = db.execute(select(func.count(Branch.id)).where(
         Branch.went_live_at >= utcnow() - timedelta(days=7)
     )).scalar_one()
+    from itam.config import settings
+    from itam.enums import OPERATING_MODEL_LABELS, ORDER_STAGES, STAGE_OPERATORS, OperatingModel
+
+    model = OperatingModel(settings.operating_model) if settings.operating_model in OperatingModel._value2member_map_ \
+        else OperatingModel.SISTER_COMPANY
     return render(request, "rollout.html", user, waves=waves, in_flight=branches, milestones=milestones,
-                  live_last_week=live_last_week)
+                  live_last_week=live_last_week, operating_model=model, model_labels=OPERATING_MODEL_LABELS,
+                  stages=list(zip(ORDER_STAGES, STAGE_OPERATORS[model])), all_operators=STAGE_OPERATORS,
+                  operator_name=settings.operator_name)
 
 
 @router.post("/rollout/milestones/{mid}")

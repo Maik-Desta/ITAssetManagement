@@ -6,11 +6,11 @@ import csv
 import io
 
 import segno
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import Response, StreamingResponse
 from sqlalchemy import or_, select
 
-from itam.enums import AssetStatus, AssetType, ChangeType, Criticality
+from itam.enums import NETWORK_TYPES, AssetStatus, AssetType, ChangeType, Criticality
 from itam.models import (
     Alert,
     Asset,
@@ -195,11 +195,17 @@ def asset_detail(request: Request, db: DB, user: CurrentUser, asset_id: int):
     filled, required, missing = asset_completeness(asset)
     open_change = change_svc.open_change_for(db, asset)
     allowed_changes = [ct for ct in ChangeType if AssetStatus(asset.status) in change_svc.ALLOWED_FROM[ct]]
+    from itam.services import logistics as log_svc
+    from itam.services import rfid as rfid_svc
+
     return render(request, "asset_detail.html", user, asset=asset, changes=changes, alerts=alerts, events=events,
                   exceptions=exceptions, locations=locations, completeness=(filled, required, missing),
                   open_change=open_change, allowed_changes=allowed_changes,
                   install_checklist=asset_svc.INSTALL_CHECKLIST,
-                  is_manager=acts_for_branch(user, Role.BRANCH_MANAGER, asset.branch))
+                  is_manager=acts_for_branch(user, Role.BRANCH_MANAGER, asset.branch),
+                  reads=rfid_svc.recent_reads(db, asset), shipment=log_svc.open_shipment_for(db, asset),
+                  last_item=rfid_svc.shipment_for_item(db, asset),
+                  needs_staging=asset.asset_type in NETWORK_TYPES and not asset.staged_at)
 
 
 @router.get("/assets/{asset_id}/edit")
@@ -261,7 +267,25 @@ def asset_custody(request: Request, db: DB, user: CurrentUser, asset_id: int):
 def asset_tag(request: Request, db: DB, user: CurrentUser, asset_id: int):
     asset = _visible_asset(db, user, asset_id)
     asset_svc.mark_tag_applied(db, user, asset)
-    return redirect(f"/assets/{asset.id}", "Tag recorded as applied.", request)
+    return redirect(f"/assets/{asset.id}", "RFID + QR label recorded as applied and verified.", request)
+
+
+@router.post("/assets/{asset_id}/rfid-verify")
+def asset_rfid_verify(request: Request, db: DB, user: CurrentUser, asset_id: int, epc: str = Form(...)):
+    asset = _visible_asset(db, user, asset_id)
+    require(user, "asset.register")
+    asset_svc.verify_rfid(db, user, asset, epc, where="registration bench (manual)")
+    return redirect(f"/assets/{asset.id}", "RFID tag verified.", request)
+
+
+@router.post("/assets/{asset_id}/staging")
+async def asset_staging(request: Request, db: DB, user: CurrentUser, asset_id: int):
+    asset = _visible_asset(db, user, asset_id)
+    f = await request.form()
+    asset_svc.record_staging(db, user, asset, config_backup_ref=opt_str(f.get("config_backup_ref")) or "",
+                             burn_in_hours=opt_int(f.get("burn_in_hours")) or 0,
+                             checklist={k: f.get(k) == "1" for k in asset_svc.INSTALL_CHECKLIST})
+    return redirect(f"/assets/{asset.id}", "Configuration and burn-in recorded: staged – ready.", request)
 
 
 def _qr_payload(request: Request, asset: Asset) -> str:

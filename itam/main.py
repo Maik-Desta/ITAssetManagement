@@ -21,7 +21,15 @@ from itam.api.routes import router as api_router
 from itam.config import Settings, settings as default_settings
 from itam.db import create_schema, init_engine
 from itam.services import ServiceError
-from itam.web import routes_admin, routes_assets, routes_assurance, routes_auth, routes_main, routes_workflow
+from itam.web import (
+    routes_admin,
+    routes_assets,
+    routes_assurance,
+    routes_auth,
+    routes_logistics,
+    routes_main,
+    routes_workflow,
+)
 from itam.web.deps import CSRFError, LoginRequired, current_user, flash, login_redirect, render
 
 log = logging.getLogger("itam")
@@ -140,7 +148,8 @@ def create_app(cfg: Settings | None = None, start_scheduler: bool | None = None)
         return response
 
     app.mount("/static", StaticFiles(directory=str(Path(__file__).parent / "web" / "static")), name="static")
-    for module in (routes_auth, routes_main, routes_assets, routes_workflow, routes_assurance, routes_admin):
+    for module in (routes_auth, routes_main, routes_assets, routes_workflow, routes_logistics, routes_assurance,
+                   routes_admin):
         app.include_router(module.router)
     app.include_router(api_router)
 

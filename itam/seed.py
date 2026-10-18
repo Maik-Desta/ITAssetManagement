@@ -16,7 +16,8 @@ from sqlalchemy.orm import Session
 from itam import auditlog
 from itam.config import settings
 from itam.enums import (
-    RESPONSE_MINUTES,
+    ROLLOUT_CHECKLIST,
+    ROLLOUT_ORDER,
     AlertCategory,
     AlertSource,
     AlertStatus,
@@ -24,8 +25,6 @@ from itam.enums import (
     ChangeType,
     OperState,
     RolloutStage,
-    ROLLOUT_CHECKLIST,
-    ROLLOUT_ORDER,
     Severity,
 )
 from itam.models import (
@@ -37,6 +36,7 @@ from itam.models import (
     JobRun,
     Location,
     Milestone,
+    ReadPoint,
     Region,
     User,
     Vendor,
@@ -48,12 +48,15 @@ from itam.services import assets as asset_svc
 from itam.services import audits as audit_svc
 from itam.services import changes as change_svc
 from itam.services import discovery as disc_svc
+from itam.services import logistics as log_svc
 from itam.services import monitoring as mon_svc
 from itam.services import requests as req_svc
+from itam.services import rfid as rfid_svc
+from itam.services import security as sec_svc
 
 DEMO_PASSWORD = os.environ.get("ITAM_DEMO_PASSWORD") or "ChangeMe!2026"
 # Bump when the demo dataset changes; a demo database tagged with an older version is replaced on start-up.
-DEMO_DATA_VERSION = "cameroon-250-v1"
+DEMO_DATA_VERSION = "cameroon-250-v2"  # v2: RFID, staging & shipments, security tiers
 DEMO_MARKER = "demo_dataset"
 DEMO_COUNTRY = "CM"
 
@@ -209,6 +212,18 @@ def seed(db: Session, small: bool = False) -> dict:
         db.add(Location(branch_id=b.id, floor="1", room="Back office"))
     db.flush()
 
+    # Security tiers (slide 33): head office / DC and 15 critical branches are Tier A.
+    hq.security_tier = "A"
+    for b in branches[1:]:
+        b.security_tier = "B"
+    by_region: dict[int, list[Branch]] = {}
+    for b in branches[1:]:
+        by_region.setdefault(b.region_id, []).append(b)
+    critical = by_region[regions["LIT"].id][:8] + by_region[regions["CEN"].id][:5] + by_region[regions["OUE"].id][:1] \
+        + by_region[regions["NOW"].id][:1]
+    for b in critical:
+        b.security_tier = "A"
+
     # Rollout progress: pilot + wave 1 live, wave 2 in progress, wave 3 not started.
     for b in branches[1:]:
         if b.wave in ("PILOT", "WAVE1"):
@@ -342,12 +357,18 @@ def seed(db: Session, small: bool = False) -> dict:
                                                   Location.room == "Central store")).scalar_one().id
     for atype, qty, cost in (("RTR", 6, 4800.0), ("SWT", 8, 2500.0), ("FWL", 3, 9500.0), ("SRV", 2, 18000.0),
                              ("UPS", 5, 1200.0), ("EUD", 18, 1200.0), ("ATM", 2, 32000.0)):
-        for _ in range(qty):
-            asset_svc.register_asset(db, itam, branch=hq, asset_type=atype,
-                                     serial_number=f"ST{atype}{rnd.randint(100000, 999999)}",
-                                     model_id=models[atype][0].id, contract_id=contracts[0].id, purchase_cost=cost * FX,
-                                     finance_asset_ref=f"FA-{200000 + rnd.randint(0, 9999)}", location_id=store_loc,
-                                     received_date=today - timedelta(days=rnd.choice([3, 10, 21, 45, 75, 120, 200])))
+        for n in range(qty):
+            st = asset_svc.register_asset(db, itam, branch=hq, asset_type=atype,
+                                          serial_number=f"ST{atype}{rnd.randint(100000, 999999)}",
+                                          model_id=models[atype][0].id, contract_id=contracts[0].id, purchase_cost=cost * FX,
+                                          finance_asset_ref=f"FA-{200000 + rnd.randint(0, 9999)}", location_id=store_loc,
+                                          received_date=today - timedelta(days=rnd.choice([3, 10, 21, 45, 75, 120, 200])))
+            if n < qty - 1:  # the newest item of each type is still waiting for its verify read
+                asset_svc.verify_rfid(db, itam, st, st.rfid_epc)
+            if n % 2 == 0 and st.rfid_verified_at:
+                asset_svc.record_staging(db, itam, st, config_backup_ref=f"GOLD-{atype}-2026.09",
+                                         burn_in_hours=rnd.choice([24, 36, 48]),
+                                         checklist=dict.fromkeys(asset_svc.INSTALL_CHECKLIST, True))
 
     live_branches = [b for b in branches if b.rollout_stage == RolloutStage.LIVE.value and not b.is_head_office]
 
@@ -417,7 +438,7 @@ def seed(db: Session, small: bool = False) -> dict:
     # Run the escalation timer as the scheduler would have, timestamping each step when it fell due.
     mon_svc.escalate_overdue(db, now)
     for a in db.execute(select(Alert).where(Alert.status == AlertStatus.OPEN.value)).scalars():
-        target = timedelta(minutes=RESPONSE_MINUTES[Severity(a.severity)])
+        target = a.escalation_step
         for e in a.escalations:
             if e.reason.startswith("Not acknowledged"):
                 e.at = a.detected_at + target * e.level
@@ -438,6 +459,15 @@ def seed(db: Session, small: bool = False) -> dict:
                         "hostname": host, "vendor": "Unknown"})
         coll = collectors[region_code[b.region_id]]
         disc_svc.ingest_discovery(db, coll, b.code, devices, now.isoformat())
+
+    # A branch-bought 4G modem plugged into a branch switch: unapproved device (slides 3, 8, 10).
+    modem_branch = lit_live[6]
+    expected = disc_svc.expected_on_network(db, modem_branch)
+    devices = [{"serial": a.serial_number, "mac": a.mac_address, "ip": a.ip_address} for a in expected
+               if a.status != AssetStatus.MISSING.value]
+    devices.append({"ip": f"10.99.{int(modem_branch.code)}.201", "mac": "48:7b:6b:12:9a:01", "hostname": "HUAWEI-B535",
+                    "vendor": "Huawei", "model": "B535 4G router", "type": "MODEM"})
+    disc_svc.ingest_discovery(db, collectors["LIT"], modem_branch.code, devices, now.isoformat())
 
     # Workflows in various states.
     some = live_branches[20]
@@ -474,18 +504,21 @@ def seed(db: Session, small: bool = False) -> dict:
     r2 = req_svc.create_request(db, engineers["CEN"], branch=[b for b in branches if b.region_id == regions["CEN"].id][0],
                                 asset_type="RTR", quantity=1, justification="Replace ISR 2901 (end of support)",
                                 model_id=models["RTR"][0].id, estimated_cost=4800 * FX)
-    req_svc.approve(db, itam, r2, "it")
+    req_svc.approve(db, head if r2.outside_blueprint else itam, r2, "it")
     req_svc.approve(db, finance, r2, "budget")
     req_svc.record_po(db, procurement, r2, "PO-2026-0457", "Dimension Data")
+
+    _seed_rfid_logistics_security(db, rnd, now, today, hq, branches, regions, collectors, managers, engineers,
+                                  itam, procurement, finance, models, critical, live_branches, r2, region_code)
 
     # Programme milestones (decision gates G1-G5) and budget.
     start = today - timedelta(days=200)
     for code, name, phase, month, actual_delta, planned_budget, actual_budget in [
         ("G1", "Business case approved", "Phase 0 – Mobilise & baseline", 1, 0, 50000, 48000),
-        ("G2", "Vendor selected", "Phase 1 – Design & select", 3, 6, 120000, 126000),
-        ("G3", "Pilot exit", "Phase 2 – Build & pilot", 5, 0, 450000, 470000),
-        ("G4", "Rollout done", "Phase 3 – Rollout waves 1-3", 10, None, 900000, None),
-        ("G5", "BAU handover", "Phase 4 – Stabilise & handover", 12, None, 150000, None),
+        ("G2", "Platform proven (PoC + pen test)", "Phase 1 – Build & prove: PoC in 3 branches", 3, 6, 120000, 126000),
+        ("G3", "Pilot exit (RFID read rate ≥ 99%)", "Phase 2 – Pilot: HQ + 5 branches", 5, 0, 450000, 470000),
+        ("G4", "Rollout done", "Phase 3 – Roll out: 3 waves, 100+ branches", 12, None, 900000, None),
+        ("G5", "BAU handover to the ITAM Office", "Phase 4 – Stabilise & hand over", 15, None, 150000, None),
     ]:
         planned = start + timedelta(days=30 * month)
         db.add(Milestone(code=code, name=name, phase=phase, planned_date=planned,
@@ -497,3 +530,128 @@ def seed(db: Session, small: bool = False) -> dict:
     auditlog.record(db, admin, "system.seed", "system", None, branches=len(branches), assets=created,
                     dataset=DEMO_DATA_VERSION)
     return {"branches": len(branches), "assets": created, "users": len(db.execute(select(User)).scalars().all())}
+
+
+def _seed_rfid_logistics_security(db, rnd, now, today, hq, branches, regions, collectors, managers, engineers, itam,
+                                  procurement, finance, models, critical, live_branches, r2, region_code) -> None:
+    """Read points, shipments in each state, and security events (slides 20, 27-33)."""
+    # Read points: staging centre, DC exit, critical branches (cabinet + exit), handhelds per region.
+    for code, name, kind, cam in [("HQ-DOCK-IN", "Goods-in dock portal", "DOCK_IN", "CAM-HQ-DOCK-IN"),
+                                  ("HQ-REG", "Registration bench (printer-encoder)", "REGISTRATION", None),
+                                  ("HQ-CAGE", "Secure store cage reader", "CAGE", "CAM-HQ-CAGE"),
+                                  ("HQ-DISPATCH", "Dispatch dock exit portal", "DISPATCH", "CAM-HQ-DISPATCH"),
+                                  ("HQ-DC-EXIT", "Data centre exit portal", "EXIT_PORTAL", "CAM-HQ-DC-EXIT")]:
+        rfid_svc.create_read_point(db, itam, code=code, name=name, kind=kind, branch=hq, camera_ref=cam)
+    for b in critical:
+        comms = next(loc for loc in b.locations if loc.room == "Comms room")
+        rfid_svc.create_read_point(db, itam, code=f"{b.code}-CAB", name=f"Comms cabinet reader {b.code}", kind="CABINET",
+                                   branch=b, location_id=comms.id, camera_ref=f"CAM-{b.code}-COMMS")
+        rfid_svc.create_read_point(db, itam, code=f"{b.code}-EXIT", name=f"Staff exit portal {b.code}",
+                                   kind="EXIT_PORTAL", branch=b, camera_ref=f"CAM-{b.code}-EXIT")
+    for code, region in regions.items():
+        first = next(b for b in branches if b.region_id == region.id and not b.is_head_office)
+        for n, kind in ((1, "BRANCH_RECEIPT"), (2, "INSTALL"), (3, "AUDIT_SWEEP")):
+            rfid_svc.create_read_point(db, itam, code=f"{code}-HH-{n}", name=f"Handheld {code} {n}", kind=kind, branch=first)
+    for rp in db.execute(select(ReadPoint)).scalars():
+        rp.last_heartbeat_at = now - timedelta(minutes=rnd.randint(0, 3))
+    lit = collectors["LIT"]
+
+    # The CEN router request (r2): vendor shipping notice recorded, goods awaited at staging.
+    req_svc.record_shipping_notice(db, procurement, r2, "ASN-DD-26-1187", [f"FGL{rnd.randint(100000, 999999)}"],
+                                   today + timedelta(days=4))
+
+    def ordered(branch, atype, qty, why):
+        req = req_svc.create_request(db, managers[branch.id], branch=branch, asset_type=atype, quantity=qty,
+                                     justification=why, model_id=models[atype][0].id,
+                                     estimated_cost=UNIT_COST_USD[atype] * qty * FX)
+        if req.outside_blueprint:
+            req_svc.approve(db, db.execute(select(User).where(User.username == "head.infra")).scalar_one(), req, "it")
+        else:
+            req_svc.approve(db, itam, req, "it")
+        req_svc.approve(db, finance, req, "budget")
+        req_svc.record_po(db, procurement, req, f"PO-2026-{1000 + req.id}", "CFAO Technologies")
+        serials = [f"{atype}{rnd.randint(1000000, 9999999)}" for _ in range(qty)]
+        req_svc.record_shipping_notice(db, procurement, req, f"ASN-CFAO-{req.id:04d}", serials, today)
+        received = req_svc.receive(db, itam, req, serials)
+        for a in received:
+            rfid_svc.ingest_reads(db, collectors["LIT"], [{"read_point": "HQ-REG", "epc": a.rfid_epc}])
+            if a.asset_type in ("RTR", "SWT", "FWL", "SRV", "UPS"):
+                asset_svc.record_staging(db, itam, a, config_backup_ref=f"GOLD-{atype}-2026.10", burn_in_hours=36,
+                                         checklist=dict.fromkeys(asset_svc.INSTALL_CHECKLIST, True))
+        return received
+
+    def portal_dispatch(shipment):
+        rfid_svc.ingest_reads(db, lit, [{"read_point": "HQ-DISPATCH", "epc": i.asset.rfid_epc, "event": "LEFT"}
+                                        for i in shipment.items])
+
+    # 1. Delivered and installed: two tellers' PCs for a Douala branch.
+    dest = live_branches[3]
+    pcs = ordered(dest, "EUD", 2, "Two new tellers")
+    s1 = log_svc.create_shipment(db, itam, to_branch=dest, assets=pcs, seal_number="TS-0004411",
+                                 carrier="Bank van LIT-2", eta=now - timedelta(days=2))
+    portal_dispatch(s1)
+    rfid_svc.ingest_reads(db, lit, [{"read_point": "LIT-HH-1", "epc": a.rfid_epc, "branch_code": dest.code} for a in pcs])
+    log_svc.receive_shipment(db, managers[dest.id], s1, scanned=[], seal_intact=True, seal_number="TS-0004411")
+    log_svc.accept_custody(db, managers[dest.id], s1)
+
+    # 2. In transit, on time: replacement switch for a critical Yaoundé branch.
+    cen_dest = next(b for b in critical if b.region_id == regions["CEN"].id)
+    sw = ordered(cen_dest, "SWT", 1, "Replace failing access switch")
+    s2 = log_svc.create_shipment(db, itam, to_branch=cen_dest, assets=sw, seal_number="TS-0004418",
+                                 carrier="DHL Express Cameroun", eta=now + timedelta(hours=20))
+    portal_dispatch(s2)
+
+    # 3. Overdue: a UPS for a Bafoussam branch, ETA passed yesterday.
+    oue_dest = next(b for b in live_branches if b.region_id == regions["OUE"].id)
+    ups = ordered(oue_dest, "UPS", 1, "UPS battery end of life")
+    s3 = log_svc.create_shipment(db, itam, to_branch=oue_dest, assets=ups, seal_number="TS-0004402",
+                                 carrier="Express Union Logistique", eta=now - timedelta(hours=26))
+    portal_dispatch(s3)
+    s3.dispatched_at = now - timedelta(days=2)
+    log_svc.overdue_shipments(db, now)
+
+    # 4. Delivered with variance: one of two PCs missing, seal number different.
+    var_dest = live_branches[9]
+    two = ordered(var_dest, "EUD", 2, "Back-office refresh")
+    s4 = log_svc.create_shipment(db, itam, to_branch=var_dest, assets=two, seal_number="TS-0004390",
+                                 carrier="Bank van LIT-1", eta=now - timedelta(days=1))
+    portal_dispatch(s4)
+    rfid_svc.ingest_reads(db, lit, [{"read_point": "LIT-HH-1", "epc": two[0].rfid_epc, "branch_code": var_dest.code}])
+    log_svc.receive_shipment(db, managers[var_dest.id], s4, scanned=[], seal_intact=True, seal_number="TS-0004891",
+                             note="Seal number on the carton differs from the manifest")
+
+    # 5. Packed and waiting at the dispatch dock.
+    pack_dest = live_branches[14]
+    pk = ordered(pack_dest, "EUD", 1, "Replacement for stolen PC")
+    log_svc.create_shipment(db, itam, to_branch=pack_dest, assets=pk, seal_number="TS-0004420", carrier="Bank van LIT-2",
+                            eta=now + timedelta(days=1))
+
+    # Security: an approved repair leaves through the exit portal (logged with evidence clip) …
+    tier_a = [b for b in critical if b.rollout_stage == RolloutStage.LIVE.value]
+    rep_branch = tier_a[0]
+    rep = next(a for a in rep_branch.assets if a.asset_type == "UPS")
+    ch = change_svc.create_change(db, engineers[region_code[rep_branch.region_id]], rep, ChangeType.SEND_REPAIR,
+                                  "Battery swelling", ticket_ref="CHG-T-1010", scheduled_for=now - timedelta(minutes=30))
+    change_svc.decide(db, db.execute(select(User).where(User.username == f"lead.{region_code[rep_branch.region_id].lower()}"))
+                      .scalar_one(), ch, True, "Go")
+    change_svc.decide(db, itam, ch, True, "Go")
+    rfid_svc.ingest_reads(db, lit, [{"read_point": f"{rep_branch.code}-EXIT", "epc": rep.rfid_epc, "event": "LEFT",
+                                     "read_at": (now - timedelta(minutes=25)).isoformat()}])
+    # … but a PC leaves another critical branch with no ticket: P1 suspected removal with exit clip.
+    rem_branch = tier_a[1]
+    pc = next(a for a in rem_branch.assets if a.asset_type == "EUD" and a.status == AssetStatus.ACTIVE.value)
+    sec_svc.ingest_events(db, lit, [{"branch_code": rem_branch.code, "kind": "BADGE", "door": "staff exit",
+                                     "badge_id": "B-20931", "authorised": True,
+                                     "occurred_at": (now - timedelta(minutes=7, seconds=20)).isoformat()}])
+    rfid_svc.ingest_reads(db, lit, [{"read_point": f"{rem_branch.code}-EXIT", "epc": pc.rfid_epc, "event": "LEFT",
+                                     "read_at": (now - timedelta(minutes=7)).isoformat()}])
+    # Comms-cabinet door opened after hours without a badge at a third critical branch.
+    door_branch = tier_a[2]
+    sec_svc.ingest_events(db, lit, [{"branch_code": door_branch.code, "kind": "DOOR_OPEN", "door": "comms cabinet",
+                                     "occurred_at": (now - timedelta(minutes=3)).isoformat()}])
+    # VMS has already exported and hashed the suspected-removal clip.
+    for a in db.execute(select(Alert).where(Alert.category == "SUSPECTED_REMOVAL", Alert.status == "OPEN")).scalars():
+        for clip in a.clips:
+            sec_svc.archive_clip(db, clip.id, sha256=sec_svc.clip_digest(f"demo-clip-{clip.id}".encode()),
+                                 url=f"https://vms.bank.local/clips/{clip.id}", vms_ref=f"BM-{clip.id:06d}")
+    db.flush()
