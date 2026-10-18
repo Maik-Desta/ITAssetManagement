@@ -24,7 +24,7 @@
   "/admin/jobs": "M12 21a9 9 0 100-18 9 9 0 000 18zM12 7v5l3 2",
 } -%}
 <a href="{{ href }}" class="{{ 'active' if path == href or (href != '/' and path.startswith(href ~ '/')) else '' }}">
-  <span class="nav-label"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="{{ icons.get(href, icons['/assets']) }}"/></svg>{{ label }}</span>{% if count %}<span class="badge">{{ count }}</span>{% endif %}
+  <span class="nav-label"><svg class="nav-icon" viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{ icons.get(href, icons['/assets']) }}"/></svg>{{ label }}</span>{% if count %}<span class="badge">{{ count }}</span>{% endif %}
 </a>
 {%- endmacro %}
 
@@ -168,7 +168,7 @@
   "gauge": "M12 21a9 9 0 110-18 9 9 0 010 18zM12 12l4-4",
   "list": "M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01",
 } -%}
-<svg class="kpi-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="{{ paths.get(name, paths.box) }}"/></svg>
+<svg class="kpi-icon" viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{ paths.get(name, paths.box) }}"/></svg>
 {%- endmacro %}
 
 {# Horizontal stacked bars. rows: [{label, href, total, stages:{key:n}}]; stages: [(key, label, help)]. #}

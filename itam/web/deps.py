@@ -71,6 +71,21 @@ def _duration(minutes: float | None) -> str:
     return f"{minutes / 60:.1f} h"
 
 
+def _asset_version() -> str:
+    """Content hash of the static files: a new deploy changes the URLs, so browsers never mix old CSS with new pages."""
+    import hashlib
+
+    digest = hashlib.sha256()
+    static = Path(__file__).parent / "static"
+    for name in ("style.css", "app.js", "theme.js"):
+        f = static / name
+        if f.exists():
+            digest.update(f.read_bytes())
+    return digest.hexdigest()[:10]
+
+
+ASSET_VERSION = _asset_version()
+
 TEMPLATES.env.filters.update(dt=_fmt_dt, d=_fmt_date, ago=_ago, duration=_duration)
 TEMPLATES.env.globals.update(
     can=can, enums=enums, STATUS_LABELS={k.value: v for k, v in enums.STATUS_LABELS.items()},
@@ -79,6 +94,7 @@ TEMPLATES.env.globals.update(
     SEVERITY_LABELS={k.value: v for k, v in enums.SEVERITY_LABELS.items()},
     ROLE_LABELS={k.value: v for k, v in ROLE_LABELS.items()},
     settings=settings,
+    asset_version=ASSET_VERSION,
     app_version=__import__("itam").__version__,
     build=(__import__("os").environ.get("RENDER_GIT_COMMIT") or "")[:7],
 )
