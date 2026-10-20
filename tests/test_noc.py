@@ -154,5 +154,6 @@ def test_branch_offline_voice_announcement_in_english_and_french(client, db, wor
     login(client, "noc")
     html = client.get("/noc").text
     assert "data-say-en=" in html and "data-say-fr=" in html and "data-voice-toggle" in html
-    assert 'class="cmr-map"' in html and 'class="cmr-dot p1' in html  # live map, P1 branch flashing
+    assert 'class="cmr-map"' in html and "cmr-dot alarm p1 offline" in html  # offline branch flashing red
+    assert "OFFLINE</text>" in html  # with its red label
     assert "Executive View" in html
