@@ -23,6 +23,7 @@ from itam.enums import (
 )
 from itam.models import Alert, Asset, Branch, Notification, User, utcnow
 from itam.rbac import scope_branches
+from itam.services import announce
 from itam.services.monitoring import ESCALATION_LEVELS, MAX_ESCALATION, ceo_informed, escalation_path
 
 IMPACTS = [("P1", "Critical"), ("P2", "Major"), ("P3", "Medium"), ("P4", "Minor")]
@@ -167,6 +168,10 @@ def noc_overview(db: Session, user: User, now: datetime | None = None, window_da
         br["assets"].append({"asset": a, "state": state, "since": a.oper_state_since})
         reg[state] += 1
     affected_regions = sorted(affected.values(), key=lambda r: r["region"].code)
+    for g in incidents:
+        if g["offline"] and g["branch"]:
+            br = affected.get(g["branch"].region_id, {}).get("branches", {}).get(g["branch"].id)
+            g["announce"] = announce.branch_offline(g, br["assets"] if br else [])
     for reg in affected_regions:
         reg["branch_list"] = sorted(reg["branches"].values(), key=lambda b: (not b["offline"], b["branch"].code))
 

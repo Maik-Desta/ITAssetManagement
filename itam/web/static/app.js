@@ -9,24 +9,44 @@
     });
   });
 
-  // Auto-refresh (NOC console)
+  // Auto-refresh (NOC console). The page content is swapped in place rather than reloaded, so the page keeps
+  // its permission to play sound (voice alerts) and the chosen view. Any failure falls back to a full reload.
   var refresh = parseInt(document.body.dataset.refresh || "0", 10);
-  if (refresh > 0) {
-    setTimeout(function () {
-      if (!document.querySelector("form :focus")) window.location.reload();
-    }, refresh * 1000);
+  function busy() {
+    return document.querySelector("main form :focus") || document.querySelector("main details[open] form");
   }
+  function softRefresh() {
+    if (busy()) { setTimeout(softRefresh, refresh * 1000); return; }
+    fetch(location.href, { credentials: "same-origin", headers: { "X-Requested-With": "soft-refresh" } })
+      .then(function (r) {
+        if (!r.ok || new URL(r.url).pathname !== location.pathname) throw new Error("reload");
+        return r.text();
+      })
+      .then(function (html) {
+        var fresh = new DOMParser().parseFromString(html, "text/html").querySelector("main.content");
+        var main = document.querySelector("main.content");
+        if (!fresh || !main) throw new Error("reload");
+        var boxes = main.querySelectorAll(".fit-scroll, .table-scroll");
+        var tops = Array.prototype.map.call(boxes, function (b) { return b.scrollTop; });
+        main.innerHTML = fresh.innerHTML;
+        document.dispatchEvent(new CustomEvent("itam:content", { detail: main }));
+        Array.prototype.forEach.call(main.querySelectorAll(".fit-scroll, .table-scroll"), function (b, i) {
+          if (tops[i]) b.scrollTop = tops[i];
+        });
+        setTimeout(softRefresh, refresh * 1000);
+      })
+      .catch(function () { window.location.reload(); });
+  }
+  if (refresh > 0) setTimeout(softRefresh, refresh * 1000);
 
-  // Confirmation prompts
-  document.querySelectorAll("form[data-confirm]").forEach(function (form) {
-    form.addEventListener("submit", function (e) {
-      if (!window.confirm(form.dataset.confirm)) e.preventDefault();
-    });
+  // Confirmation prompts and auto-submit controls (delegated, so refreshed content works too)
+  document.addEventListener("submit", function (e) {
+    var form = e.target;
+    if (form.dataset && form.dataset.confirm && !window.confirm(form.dataset.confirm)) e.preventDefault();
   });
-
-  // Auto-submit controls (checklists, filters)
-  document.querySelectorAll("[data-autosubmit]").forEach(function (el) {
-    el.addEventListener("change", function () { el.form.submit(); });
+  document.addEventListener("change", function (e) {
+    var el = e.target;
+    if (el.matches && el.matches("[data-autosubmit]") && el.form) el.form.submit();
   });
 
   // Chart tooltips: any element with data-tip
@@ -34,26 +54,27 @@
   tip.id = "tooltip";
   tip.hidden = true;
   document.body.appendChild(tip);
-  function showTip(e) {
-    var t = e.currentTarget.getAttribute("data-tip");
+  function showTip(e, el) {
+    var t = el.getAttribute("data-tip");
     if (!t) return;
     tip.textContent = t;
     tip.hidden = false;
     var x = e.clientX, y = e.clientY;
     if (x === undefined || (x === 0 && y === 0)) {
-      var r = e.currentTarget.getBoundingClientRect();
+      var r = el.getBoundingClientRect();
       x = r.left + r.width / 2; y = r.top;
     }
     tip.style.left = Math.min(x + 12, window.innerWidth - tip.offsetWidth - 8) + "px";
     tip.style.top = Math.max(y - tip.offsetHeight - 10, 4) + "px";
   }
   function hideTip() { tip.hidden = true; }
-  document.querySelectorAll("[data-tip]").forEach(function (el) {
-    el.addEventListener("mousemove", showTip);
-    el.addEventListener("focus", showTip);
-    el.addEventListener("mouseleave", hideTip);
-    el.addEventListener("blur", hideTip);
+  function tipTarget(e) { return e.target.closest ? e.target.closest("[data-tip]") : null; }
+  document.addEventListener("mousemove", function (e) {
+    var el = tipTarget(e);
+    if (el) showTip(e, el); else if (!tip.hidden) hideTip();
   });
+  document.addEventListener("focusin", function (e) { var el = tipTarget(e); if (el) showTip({}, el); });
+  document.addEventListener("focusout", hideTip);
 
   // Dependent selects: <select data-filter-by="#branch" > options carry data-parent
   document.querySelectorAll("select[data-filter-by]").forEach(function (sel) {
@@ -181,7 +202,10 @@ document.querySelectorAll("[data-print]").forEach(function (b) {
     return simple ? rows : null;
   }
 
-  document.querySelectorAll("table").forEach(function (table, index) {
+  var tableIndex = 0;
+  function enhanceTables(scope) {
+  scope.querySelectorAll("table").forEach(function (table) {
+    var index = tableIndex++;
     if (table.closest(".table-view") || table.classList.contains("no-enhance")) return;
     var thead = table.tHead, tbody = table.tBodies[0];
     if (!thead || !tbody || thead.rows.length !== 1) return;
@@ -272,6 +296,9 @@ document.querySelectorAll("[data-print]").forEach(function (b) {
       });
     }
   });
+  }
+  enhanceTables(document);
+  document.addEventListener("itam:content", function (e) { enhanceTables(e.detail); });
 
   // KPI count-up: whole numbers animate from zero once, on load.
   if (!reduceMotion) {
@@ -297,10 +324,13 @@ document.querySelectorAll("[data-print]").forEach(function (b) {
 // Executive dashboard views: one screen each, switched in place. Without JS every view shows.
 (function () {
   "use strict";
-  var bar = document.querySelector("[data-board-tabs]");
+  var bar, views, buttons, onHash = function () {};
+  function init(e) {
+  var refreshed = !!(e && e.type === "itam:content");
+  bar = document.querySelector("[data-board-tabs]");
   if (!bar) return;
-  var views = Array.prototype.slice.call(document.querySelectorAll(".board-view"));
-  var buttons = Array.prototype.slice.call(bar.querySelectorAll("button[data-view]"));
+  views = Array.prototype.slice.call(document.querySelectorAll(".board-view"));
+  buttons = Array.prototype.slice.call(bar.querySelectorAll("button[data-view]"));
   document.body.classList.add("has-board-views");
   function show(name, focusTarget) {
     if (!views.some(function (v) { return v.dataset.view === name; })) name = views[0].dataset.view;
@@ -318,22 +348,25 @@ document.querySelectorAll("[data-print]").forEach(function (b) {
     return false;
   }
   buttons.forEach(function (b) { b.addEventListener("click", function () { show(b.dataset.view); }); });
-  window.addEventListener("hashchange", fromHash);
-  if (!fromHash()) {
+  onHash = fromHash;
+  if (refreshed || !fromHash()) {
     var saved = null;
     try { saved = sessionStorage.getItem("itam-view:" + location.pathname); } catch (e) { /* default view */ }
     show(saved || views[0].dataset.view);
   }
+  }
+  init();
+  window.addEventListener("hashchange", function () { onHash(); });
+  document.addEventListener("itam:content", init);
 })();
 
 // Fit each page to one screen: table scroll boxes give up height (down to a readable minimum) until the
 // page is no taller than the window; the last one also grows to use any space left below it.
 (function () {
   "use strict";
-  var all = Array.prototype.slice.call(document.querySelectorAll(".table-scroll, .fit-scroll"));
-  if (!all.length) return;
-  var MIN = 220;
   function fit() {
+    var MIN = window.innerHeight < 860 ? 180 : 220;
+    var all = Array.prototype.slice.call(document.querySelectorAll(".table-scroll, .fit-scroll"));
     all.forEach(function (b) { b.style.maxHeight = ""; });
     if (window.innerWidth <= 760) return;
     var boxes = all.filter(function (b) { return b.offsetParent !== null && !b.parentElement.closest(".table-scroll, .fit-scroll"); });
@@ -354,4 +387,105 @@ document.querySelectorAll("[data-print]").forEach(function (b) {
   fit();
   window.addEventListener("resize", fit);
   document.addEventListener("itam:view", fit);
+  document.addEventListener("itam:content", fit);
+})();
+
+// Voice alerts (NOC): each offline branch is read aloud in English, then in French, by the browser's own speech
+// engine. Browsers only allow sound after a click on the page, so "Voice alerts" must be switched on once; the
+// choice is remembered and new or still-open outages are announced again every 10 minutes.
+(function () {
+  "use strict";
+  var synth = window.speechSynthesis;
+  if (!synth || !window.SpeechSynthesisUtterance) return;  // buttons stay hidden
+  var KEY = "itam-voice", LAST = "itam-voice-last", REPEAT = 10 * 60 * 1000;
+  function store(k, v) { try { if (v === null) localStorage.removeItem(k); else localStorage.setItem(k, v); } catch (e) { /* session only */ } }
+  function load(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+  function isOn() { return load(KEY) === "on"; }
+  function lastTimes() { try { return JSON.parse(load(LAST) || "{}"); } catch (e) { return {}; } }
+  synth.getVoices();  // starts loading the voice list
+
+  function voiceFor(lang) {
+    var vs = synth.getVoices(), pref = lang === "fr" ? ["fr-FR", "fr-CA", "fr"] : ["en-GB", "en-US", "en"];
+    for (var i = 0; i < pref.length; i++) {
+      for (var j = 0; j < vs.length; j++) {
+        if (vs[j].lang.replace("_", "-").toLowerCase().indexOf(pref[i].toLowerCase()) === 0) return vs[j];
+      }
+    }
+    return null;
+  }
+  function chime() {
+    try {
+      var Ctx = window.AudioContext || window.webkitAudioContext, ctx = new Ctx();
+      [880, 660, 880].forEach(function (f, i) {
+        var o = ctx.createOscillator(), g = ctx.createGain(), t = ctx.currentTime + i * 0.22;
+        o.frequency.value = f; o.type = "sine";
+        g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.25, t + 0.02);
+        g.gain.exponentialRampToValueAtTime(0.0001, t + 0.2);
+        o.connect(g); g.connect(ctx.destination); o.start(t); o.stop(t + 0.21);
+      });
+      setTimeout(function () { ctx.close(); }, 1200);
+    } catch (e) { /* no chime */ }
+  }
+  function toggles() { return Array.prototype.slice.call(document.querySelectorAll("[data-voice-toggle]")); }
+  function needTap() {
+    toggles().forEach(function (t) { t.classList.add("needs-tap"); t.querySelector(".voice-label").textContent = "Tap to hear the alert"; });
+  }
+  function paint() {
+    toggles().forEach(function (t) {
+      t.hidden = false;
+      t.classList.remove("needs-tap");
+      t.setAttribute("aria-pressed", String(isOn()));
+      t.querySelector(".voice-label").textContent = isOn() ? "Voice alerts: on (EN / FR)" : "Voice alerts: off";
+    });
+  }
+
+  function announce(banners) {
+    if (!banners.length) return;
+    synth.cancel();
+    chime();
+    var started = false, times = lastTimes(), now = Date.now();
+    banners.forEach(function (b) {
+      times[b.dataset.key] = now;
+      [["en", b.dataset.sayEn], ["fr", b.dataset.sayFr]].forEach(function (part, i) {
+        var u = new SpeechSynthesisUtterance(part[1]);
+        u.lang = part[0] === "fr" ? "fr-FR" : "en-GB";
+        var v = voiceFor(part[0]);
+        if (v) u.voice = v;
+        u.rate = 0.95;
+        u.onstart = function () { started = true; b.classList.add("speaking"); };
+        u.onend = function () { if (i === 1) b.classList.remove("speaking"); };
+        u.onerror = function (e) {
+          b.classList.remove("speaking");
+          if (e.error === "not-allowed") needTap();
+        };
+        setTimeout(function () { synth.speak(u); }, 700);  // after the chime
+      });
+    });
+    store(LAST, JSON.stringify(times));
+    setTimeout(function () { if (!started && !synth.speaking) needTap(); }, 4000);
+  }
+
+  function init() {
+    var banners = Array.prototype.slice.call(document.querySelectorAll("[data-announce]"));
+    document.querySelectorAll("[data-speak]").forEach(function (btn) {
+      btn.hidden = false;
+      btn.addEventListener("click", function () { announce([btn.closest("[data-announce]")]); });
+    });
+    toggles().forEach(function (t) {
+      t.addEventListener("click", function () {
+        if (isOn() && !t.classList.contains("needs-tap")) {
+          store(KEY, null); synth.cancel(); paint(); return;
+        }
+        store(KEY, "on"); paint();
+        announce(Array.prototype.slice.call(document.querySelectorAll("[data-announce]")));
+      });
+    });
+    paint();
+    if (!isOn()) return;
+    var times = lastTimes(), now = Date.now();
+    var due = banners.filter(function (b) { return !times[b.dataset.key] || now - times[b.dataset.key] >= REPEAT; });
+    if (due.length) announce(due);
+  }
+  init();
+  document.addEventListener("itam:content", init);
 })();

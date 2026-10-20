@@ -88,10 +88,17 @@
     <a href="/branches?region={{ s.code }}" aria-label="{{ r.name if r else s.code }}">
       <path class="cmr-region lvl-{{ s.level }}" d="{{ s.d }}" data-tip="{% if r %}{{ r.name }} · {{ r.branches }} branches · {{ r.online + r.degraded }}/{{ r.monitored }} online{% if r.availability is not none %} ({{ r.availability }}%){% endif %} · {{ r.alerts }} open alerts · {{ r.security }} security · {{ r.exceptions }} exceptions{% else %}{{ s.code }}: no branches in scope{% endif %}"/>
     </a>{% endfor %}</g>
-  <g class="cmr-dots" aria-hidden="true">{% for d in m.dots %}
+  <g class="cmr-dots">{% for d in m.dots %}
+    {% if d.p1 %}<a class="cmr-p1" href="/branches/{{ d.branch.id }}" aria-label="P1 incident open at {{ d.branch.code }} {{ d.branch.name }}">
+    <circle class="cmr-ping p1" cx="{{ d.x }}" cy="{{ d.y }}" r="8"/>
+    <circle class="cmr-ping p1 late" cx="{{ d.x }}" cy="{{ d.y }}" r="8"/>
+    <circle class="cmr-dot p1 st-{{ d.state }}" cx="{{ d.x }}" cy="{{ d.y }}" r="8"
+      data-tip="P1 · {{ d.branch.code }} {{ d.branch.name }} · {{ d.state.replace('_', ' ') }} · click for the branch"/></a>
+    {% else %}
     <circle class="cmr-dot st-{{ d.state }}" cx="{{ d.x }}" cy="{{ d.y }}" r="{{ 6 if d.state == 'offline' else 4.2 if d.state == 'degraded' else 2.6 }}"
-      data-tip="{{ d.branch.code }} {{ d.branch.name }} · {{ d.state.replace('_', ' ') }}"/>
-    {% if d.state == "offline" %}<circle class="cmr-ping" cx="{{ d.x }}" cy="{{ d.y }}" r="6"/>{% endif %}
+      data-tip="{{ d.branch.code }} {{ d.branch.name }} · {{ d.state.replace('_', ' ') }}" aria-hidden="true"/>
+    {% if d.state == "offline" %}<circle class="cmr-ping" cx="{{ d.x }}" cy="{{ d.y }}" r="6" aria-hidden="true"/>{% endif %}
+    {% endif %}
   {% endfor %}</g>
   <g class="cmr-labels" aria-hidden="true">{% for s in m.shapes %}{% set r = s.region %}
     <text x="{{ s.cx }}" y="{{ s.cy }}" text-anchor="middle">{{ s.code }}</text>

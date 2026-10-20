@@ -133,3 +133,26 @@ def test_noc_page_flashes_critical(client, db, world):
     assert "Open cases by escalation level" in html
     assert html.count("flash-critical") >= 3  # banner, tiles, incident card
     assert "On track" in html
+
+
+def test_branch_offline_voice_announcement_in_english_and_french(client, db, world):
+    _add_ceo(db)
+    world.b1.latitude, world.b1.longitude = 4.05, 9.77  # Douala, so the branch is drawn on the map
+    r = world.active_asset(world.b1, "RTR")
+    alert = mon.apply_state(db, r, OperState.DOWN, utcnow())
+    db.commit()
+    g = noc_overview(db, world.u("noc"))["offline"][0]
+    en, fr = g["announce"]["en"], g["announce"]["fr"]
+    code = " ".join(world.b1.code)
+    assert f"Branch number {code}" in en and f"L'agence numéro {code}" in fr
+    assert "router" in en and "routeur" in fr
+    assert "CEO level" in en and "Direction générale" in fr  # escalation status
+    assert "Notified:" in en and "Personnes notifiées" in fr and "CEO" in en
+    assert "not yet been acknowledged" in en and "pas encore été prise en charge" in fr
+    assert g["announce"]["key"] == alert.ticket_ref
+
+    login(client, "noc")
+    html = client.get("/noc").text
+    assert "data-say-en=" in html and "data-say-fr=" in html and "data-voice-toggle" in html
+    assert 'class="cmr-map"' in html and 'class="cmr-dot p1' in html  # live map, P1 branch flashing
+    assert "Executive View" in html

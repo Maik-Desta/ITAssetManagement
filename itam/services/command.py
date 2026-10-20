@@ -1,4 +1,4 @@
-"""One-page command centre: the CEO, CIO and CISO boards (ServiceNow ITOM / ITSM style).
+"""One-page Executive View: the CEO, CIO and CISO boards (ServiceNow ITOM / ITSM style).
 
 Everything a board shows is computed here in one pass over the user's scope, so the page renders on a single
 screen without extra queries per widget.
@@ -80,23 +80,10 @@ def _weeks(now, n: int = 8) -> list[tuple]:
     return [(now - timedelta(days=7 * (w + 1)), now - timedelta(days=7 * w)) for w in range(n - 1, -1, -1)]
 
 
-def build(db: Session, user: User, board: str) -> dict:
-    now = utcnow()
-    branches = db.execute(scope_branches(user, select(Branch).order_by(Branch.code))).scalars().all()
-    ids = [b.id for b in branches] or [-1]
-    states = branch_states(db, branches)
-
-    assets = db.execute(select(Asset).where(Asset.branch_id.in_(ids), Asset.status != AssetStatus.DISPOSED.value)).scalars().all()
-    alerts_open = db.execute(select(Alert).where(Alert.status != AlertStatus.RESOLVED.value,
-                                                 Alert.branch_id.in_(ids) | Alert.branch_id.is_(None))).scalars().all()
-    since = now - timedelta(days=56)
-    alerts_recent = db.execute(select(Alert).where(Alert.detected_at >= since,
-                                                   Alert.branch_id.in_(ids) | Alert.branch_id.is_(None))).scalars().all()
-    exc_open = db.execute(select(ControlException).where(
-        ControlException.status == ExceptionStatus.OPEN.value,
-        ControlException.branch_id.in_(ids) | ControlException.branch_id.is_(None))).scalars().all()
-
-    # --- Regions & branch dots for the map ---------------------------------------------------------------
+def region_map(branches: list[Branch], states: dict[int, str], assets: list[Asset], alerts_open: list[Alert],
+               exc_open: list[ControlException], metric: str = "availability") -> tuple[dict, dict]:
+    """Per-region roll-up and the Cameroon map (regions shaded by `metric`, branches as dots; P1 branches flash)."""
+    p1 = {a.branch_id for a in alerts_open if a.severity == Severity.P1.value and a.branch_id}
     regions: dict[str, dict] = {}
     for b in branches:
         r = regions.setdefault(b.region.code, {"code": b.region.code, "name": b.region.name, "branches": 0, "online": 0,
@@ -128,7 +115,7 @@ def build(db: Session, user: User, board: str) -> dict:
 
     def fill_level(r: dict) -> int:
         """0 = no data, 1 = good … 4 = bad, per the board's map metric."""
-        if board == "ciso":
+        if metric == "risk":
             risk = r["risk"]
             return 1 if risk == 0 else 2 if risk <= 3 else 3 if risk <= 8 else 4
         if r["availability"] is None:
@@ -146,8 +133,33 @@ def build(db: Session, user: User, board: str) -> dict:
         if b.latitude is None or b.longitude is None:
             continue
         x, y = project(b.longitude, b.latitude)
-        dots.append({"x": x, "y": y, "state": states.get(b.id, "not_monitored"), "branch": b})
-    dots.sort(key=lambda d: ["not_monitored", "online", "degraded", "offline"].index(d["state"]))
+        dots.append({"x": x, "y": y, "state": states.get(b.id, "not_monitored"), "branch": b, "p1": b.id in p1})
+    dots.sort(key=lambda d: (d["p1"], ["not_monitored", "online", "degraded", "offline"].index(d["state"])))
+    return regions, {"w": WIDTH, "h": HEIGHT, "shapes": shapes, "dots": dots, "metric": metric}
+
+
+def noc_map(db: Session, branches: list[Branch], alerts_open: list[Alert]) -> dict:
+    """Service-availability map for the NOC console."""
+    return region_map(branches, branch_states(db, branches), [], alerts_open, [])[1]
+
+
+def build(db: Session, user: User, board: str) -> dict:
+    now = utcnow()
+    branches = db.execute(scope_branches(user, select(Branch).order_by(Branch.code))).scalars().all()
+    ids = [b.id for b in branches] or [-1]
+    states = branch_states(db, branches)
+
+    assets = db.execute(select(Asset).where(Asset.branch_id.in_(ids), Asset.status != AssetStatus.DISPOSED.value)).scalars().all()
+    alerts_open = db.execute(select(Alert).where(Alert.status != AlertStatus.RESOLVED.value,
+                                                 Alert.branch_id.in_(ids) | Alert.branch_id.is_(None))).scalars().all()
+    since = now - timedelta(days=56)
+    alerts_recent = db.execute(select(Alert).where(Alert.detected_at >= since,
+                                                   Alert.branch_id.in_(ids) | Alert.branch_id.is_(None))).scalars().all()
+    exc_open = db.execute(select(ControlException).where(
+        ControlException.status == ExceptionStatus.OPEN.value,
+        ControlException.branch_id.in_(ids) | ControlException.branch_id.is_(None))).scalars().all()
+
+    regions, cmr = region_map(branches, states, assets, alerts_open, exc_open, "risk" if board == "ciso" else "availability")
     counts_state = Counter(states.values())
 
     # --- Service health -----------------------------------------------------------------------------------
@@ -231,7 +243,7 @@ def build(db: Session, user: User, board: str) -> dict:
 
     return {
         "board": board, "boards": BOARDS, "now": now, "scope": len(branches),
-        "map": {"w": WIDTH, "h": HEIGHT, "shapes": shapes, "dots": dots, "metric": "risk" if board == "ciso" else "availability"},
+        "map": cmr,
         "regions": sorted(regions.values(), key=lambda r: r["code"]),
         "states": {k: counts_state.get(k, 0) for k in ("online", "degraded", "offline", "not_monitored")},
         "branches": len(branches), "monitored": monitored, "up": up,

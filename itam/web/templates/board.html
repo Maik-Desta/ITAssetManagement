@@ -1,12 +1,12 @@
 {% extends "base.html" %}
 {% from "macros.html" import kpi, sev with context %}
 {% from "charts.html" import donut, gauge, trend, cameroon with context %}
-{% block title %}{{ d.boards[d.board] }} command centre{% endblock %}
+{% block title %}Executive View · {{ d.boards[d.board] }}{% endblock %}
 {% block content %}
 {% set p = d.priority %}
 <div class="cc-head">
   <div class="cc-title">
-    <p class="cc-eyebrow">{{ settings.bank_name }} · IT asset &amp; infrastructure command centre</p>
+    <p class="cc-eyebrow">{{ settings.bank_name }} · Executive View · IT assets &amp; infrastructure</p>
     <h1>{{ {"ceo": "State of the IT estate", "cio": "Service operations", "ciso": "Security &amp; asset assurance"}[d.board] | safe }}</h1>
     <p class="cc-meta"><span class="live-dot" aria-hidden="true"></span>Live · {{ d.scope }} sites · {{ d.now | dt("%d %b %Y, %H:%M") }} UTC</p>
   </div>
@@ -64,7 +64,7 @@
       <span><i class="lvl-1"></i>≥ 99.5%</span><span><i class="lvl-2"></i>97–99.5%</span><span><i class="lvl-3"></i>90–97%</span><span><i class="lvl-4"></i>&lt; 90%</span><span><i class="lvl-0"></i>Not yet live</span>
       {% endif %}
       <span class="sep"></span>
-      <span><i class="dot st-online"></i>Online</span><span><i class="dot st-degraded"></i>Degraded</span><span><i class="dot st-offline"></i>Offline</span>
+      <span><i class="dot st-online"></i>Online</span><span><i class="dot st-degraded"></i>Degraded</span><span><i class="dot st-offline"></i>Offline</span><span><i class="dot p1-key"></i>P1 incident</span>
     </div>
     <p class="w-foot">Region boundaries: geoBoundaries (CC BY 4.0). Click a region for its branches.</p>
   </section>

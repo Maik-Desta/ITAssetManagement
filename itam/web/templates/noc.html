@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% from "macros.html" import sev, csrf, kpi, impact_badge, escalation_stepper, channel_chips, branch_state, sla_badge with context %}
+{% from "charts.html" import cameroon with context %}
 {% block title %}NOC console{% endblock %}
 {% block content %}
 <div class="page-head board-head">
@@ -8,9 +9,12 @@
     <h1>Service status</h1>
     <p>{% if show == "live" %}<span class="live-dot"></span> Live · refreshes every 60 s · updated {{ n.now | dt("%H:%M:%S") }} UTC{% else %}Resolved alerts{% endif %}</p>
   </div>
-  <div class="tabs no-print">
+  <div class="head-actions no-print">
+  {% if show == "live" %}<button type="button" class="btn voice-toggle" data-voice-toggle aria-pressed="false" hidden><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 5L6 9H3v6h3l5 4V5zM15.5 8.5a5 5 0 010 7M18.5 5.5a9 9 0 010 13"/></svg><span class="voice-label">Voice alerts: off</span></button>{% endif %}
+  <div class="tabs">
     <a href="/noc" class="{{ 'active' if show == 'live' }}">Live incidents</a>
     <a href="/noc?show=history" class="{{ 'active' if show == 'history' }}">History</a>
+  </div>
   </div>
 </div>
 
@@ -26,9 +30,26 @@
   {% else %}<tr><td colspan="7" class="muted">No resolved alerts.</td></tr>{% endfor %}</tbody></table></div></section>
 {% else %}
 
+<div class="noc-layout">
+<section class="card noc-map" aria-labelledby="noc-map-title">
+  <header class="w-head"><h2 id="noc-map-title">Live service map</h2>
+    <span class="w-note">{{ cmr.dots | selectattr("p1") | list | length }} branch{{ "es" if cmr.dots | selectattr("p1") | list | length != 1 }} with a P1 incident</span></header>
+  {{ cameroon(cmr, {}) }}
+  <div class="map-legend">
+    <span><i class="lvl-1"></i>≥ 99.5%</span><span><i class="lvl-2"></i>97–99.5%</span><span><i class="lvl-3"></i>90–97%</span><span><i class="lvl-4"></i>&lt; 90%</span><span><i class="lvl-0"></i>Not yet live</span>
+    <span class="sep"></span>
+    <span><i class="dot st-online"></i>Online</span><span><i class="dot st-degraded"></i>Degraded</span><span><i class="dot st-offline"></i>Offline</span><span><i class="dot p1-key"></i>P1 incident</span>
+  </div>
+  {% set p1 = cmr.dots | selectattr("p1") | list | reverse | list %}
+  {% if p1 %}<ul class="p1-list" aria-label="Branches with a P1 incident">{% for d in p1[:6] %}
+    <li><a href="/branches/{{ d.branch.id }}"><i class="dot p1-key" aria-hidden="true"></i><strong>{{ d.branch.code }}</strong>
+      <span>{{ d.branch.name }}</span><small>{{ d.branch.region.code }} · {{ d.state.replace("_", " ") }}</small></a></li>
+  {% endfor %}{% if p1 | length > 6 %}<li class="muted small">+ {{ p1 | length - 6 }} more</li>{% endif %}</ul>{% endif %}
+</section>
+<div class="noc-main">
 {# ---- Branch completely offline: CEO alert banners ---- #}
 {% for g in n.offline %}{% set a = g.lead.alert %}
-<div class="outage-banner flash-critical" role="alert">
+<div class="outage-banner flash-critical" role="alert"{% if g.announce %} data-announce data-key="{{ g.announce.key }}" data-say-en="{{ g.announce.en }}" data-say-fr="{{ g.announce.fr }}"{% endif %}>
   <div class="ob-main">
     <span class="ob-tag">Branch offline</span>
     <strong><a href="/branches/{{ g.branch.id }}">{{ g.branch.code }} {{ g.branch.name }}</a></strong>
@@ -40,7 +61,10 @@
       <span class="ob-meta">{% for c in ceo.channels %}{{ {"VOICE": "Call", "SMS": "SMS", "EMAIL": "Email", "SYSTEM": "In-app", "CHAT": "Teams"}[c] }}{% if not loop.last %} · {% endif %}{% endfor %} → {{ ceo.recipients | join(", ") or "no CEO user configured" }}</span>
     {% endif %}
   </div>
-  <a class="btn" href="/alerts/{{ a.id }}">Open incident</a>
+  <div class="ob-actions">
+    {% if g.announce %}<button type="button" class="btn speak-btn" data-speak hidden><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 5L6 9H3v6h3l5 4V5zM15.5 8.5a5 5 0 010 7M18.5 5.5a9 9 0 010 13"/></svg><span>Listen · EN / FR</span><span class="eq" aria-hidden="true"><i></i><i></i><i></i><i></i></span></button>{% endif %}
+    <a class="btn" href="/alerts/{{ a.id }}">Open incident</a>
+  </div>
 </div>
 {% endfor %}
 
@@ -252,6 +276,8 @@
   </form>
   {% else %}<p class="muted small">Only NOC analysts can log incidents.</p>{% endif %}
 </details>
+</div>
+</div>
 </div>
 </div>
 {% endif %}

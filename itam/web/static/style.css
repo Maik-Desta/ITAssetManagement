@@ -826,7 +826,7 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 @media (prefers-reduced-motion: reduce) { .board-view { animation: none; } }
 
 /* =============================================================================================
-   Command centre (CEO / CIO / CISO boards): one screen on desktop, two columns on iPad, one on iPhone.
+   Executive View (CEO / CIO / CISO boards): one screen on desktop, two columns on iPad, one on iPhone.
    ============================================================================================= */
 :root {
   --map-l0: #e2e8f0; --map-l1: #b9e6c9; --map-l2: #fde3a0; --map-l3: #fbb98c; --map-l4: #ef8f8f;
@@ -1059,7 +1059,7 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 @media (max-width: 1180px) { .cc-grid-flat { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 700px) { .cc-grid-flat { grid-template-columns: minmax(0, 1fr); } .cc-grid-flat .w-wide { grid-column: auto; } }
 
-/* Command centre density: everything on one desktop screen. */
+/* Executive View density: everything on one desktop screen. */
 @media (min-width: 1181px) {
   .cc-head { margin-bottom: 8px; }
   .content[data-section="dashboard"] { padding-bottom: 14px; }
@@ -1126,7 +1126,7 @@ details.card:not([open]) { padding-bottom: 0; }
 
 /* NOC: compact header strip so the live incident list keeps most of the screen. */
 @media (min-width: 1181px) {
-  .content[data-section="noc"] { padding-bottom: 14px; }
+  .content[data-section="noc"] { padding-bottom: 8px; }
   .content[data-section="noc"] .outage-banner { padding: 8px 14px; margin-bottom: 10px; }
   .content[data-section="noc"] .kpi-grid { gap: 8px; margin-bottom: 10px; }
   .content[data-section="noc"] .kpi { padding: 8px 12px; gap: 2px; }
@@ -1134,4 +1134,61 @@ details.card:not([open]) { padding-bottom: 0; }
   .content[data-section="noc"] .kpi-icon { width: 26px; height: 26px; padding: 5px; }
   .content[data-section="noc"] .kpi-sub { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .content[data-section="noc"] .kpi-grid-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
+/* NOC: live map beside the console, flashing P1 branches, bilingual voice alerts. -------------------- */
+.head-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
+.head-actions .tabs { margin-bottom: 0; }
+.noc-layout { display: grid; gap: 12px; }
+.noc-main { min-width: 0; }
+.noc-map { display: flex; flex-direction: column; gap: 6px; }
+.noc-map .cmr-map { max-height: 520px; }
+@media (min-width: 1181px) {
+  .noc-layout { grid-template-columns: minmax(300px, 30%) minmax(0, 1fr); align-items: start; }
+  .noc-map { position: sticky; top: 64px; }
+  .noc-map .cmr-map { max-height: calc(100vh - 380px); min-height: 300px; }
+  .noc-main .kpi-grid-6 { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+}
+@media (min-width: 1181px) and (max-width: 1600px) {
+  .noc-main .kpi-grid-6 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@media (max-width: 1180px) { .noc-map { order: 2; } }
+
+.cmr-dot.p1 { fill: var(--critical); stroke: #fff; stroke-width: 2.5; cursor: pointer; animation: p1-blink .9s ease-in-out infinite; }
+.cmr-ping.p1 { stroke-width: 3; animation-duration: 1.4s; }
+.cmr-ping.p1.late { animation-delay: .7s; }
+.cmr-p1:focus-visible { outline: none; }
+.cmr-p1:focus-visible .cmr-dot { stroke: var(--accent); stroke-width: 4; }
+@keyframes p1-blink { 0%, 100% { opacity: 1; } 50% { opacity: .2; } }
+.map-legend .p1-key { background: var(--critical); box-shadow: 0 0 0 3px color-mix(in srgb, var(--critical) 35%, transparent);
+  animation: p1-blink .9s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .cmr-dot.p1, .map-legend .p1-key { animation: none; }
+  .cmr-ping.p1 { animation: none; opacity: .6; }
+}
+
+.ob-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.speak-btn, .voice-toggle { display: inline-flex; align-items: center; gap: 7px; }
+.speak-btn { border-color: color-mix(in srgb, var(--critical) 55%, var(--border)); color: var(--critical-text); font-weight: 700; }
+.speak-btn .eq { display: none; gap: 2px; align-items: flex-end; height: 14px; }
+.speak-btn .eq i { width: 3px; height: 100%; border-radius: 2px; background: currentColor; transform-origin: bottom; animation: eq .8s ease-in-out infinite; }
+.speak-btn .eq i:nth-child(2) { animation-delay: .15s; } .speak-btn .eq i:nth-child(3) { animation-delay: .3s; } .speak-btn .eq i:nth-child(4) { animation-delay: .45s; }
+@keyframes eq { 0%, 100% { transform: scaleY(.25); } 50% { transform: scaleY(1); } }
+.outage-banner.speaking .speak-btn .eq { display: inline-flex; }
+.outage-banner.speaking { outline: 2px solid var(--critical); outline-offset: 2px; }
+.voice-toggle[aria-pressed="true"] { background: color-mix(in srgb, var(--good) 14%, var(--surface-1)); border-color: var(--good); color: var(--good-text); font-weight: 700; }
+.voice-toggle.needs-tap { border-color: var(--critical); color: var(--critical-text); animation: critical-pulse 1.6s ease-in-out infinite; }
+.p1-list { list-style: none; margin: 4px 0 0; padding: 8px 0 0; border-top: 1px solid var(--border); display: grid; gap: 4px; }
+.p1-list a { display: grid; grid-template-columns: auto auto 1fr auto; align-items: center; gap: 8px; padding: 4px 8px; border-radius: 8px;
+  font-size: .8rem; color: var(--text-primary); background: color-mix(in srgb, var(--critical) 7%, transparent); }
+.p1-list a:hover { text-decoration: none; background: color-mix(in srgb, var(--critical) 14%, transparent); }
+.p1-list i.dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+.p1-list span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.p1-list small { color: var(--critical-text); font-weight: 650; white-space: nowrap; }
+@media (min-width: 1181px) and (max-height: 1000px) {
+  .content[data-section="noc"] .kpi-sub, .content[data-section="noc"] .kpi .meter { display: none; }
+  .content[data-section="noc"] .kpi { padding: 6px 10px; }
+  .content[data-section="noc"] .kpi-value { font-size: 1.2rem; }
+  .content[data-section="noc"] .outage-banner { gap: 4px 12px; }
+  .content[data-section="noc"] .p1-list li:nth-child(n+4):not(.muted) { display: none; }
 }

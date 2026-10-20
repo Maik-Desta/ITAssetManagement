@@ -46,7 +46,7 @@ def home():
 
 @router.get("/dashboard")
 def dashboard(request: Request, db: DB, user: CurrentUser, board: str = ""):
-    """One-page command centre: CEO, CIO or CISO board (defaults to the user's role)."""
+    """One-page Executive View: CEO, CIO or CISO board (defaults to the user's role)."""
     from itam.services import command as cmd_svc
 
     board = board if board in cmd_svc.BOARDS else cmd_svc.default_board(user)
@@ -79,11 +79,15 @@ def _scoped_alerts(db, user, statuses, severities=None, branch_id=None):
 def noc(request: Request, db: DB, user: CurrentUser, show: str = "live"):
     from itam.services.noc import noc_overview
 
+    from itam.services.command import noc_map
+
     data = noc_overview(db, user)
+    cmr = noc_map(db, data["branches"], [r["alert"] for r in data["rows"]]) if show == "live" else None
     history = []
     if show == "history":
         history = _scoped_alerts(db, user, [AlertStatus.RESOLVED.value], None)[:200]
-    return render(request, "noc.html", user, n=data, show=show, history=history, refresh=60 if show == "live" else 0)
+    return render(request, "noc.html", user, n=data, show=show, history=history, cmr=cmr,
+                  refresh=60 if show == "live" else 0)
 
 
 @router.get("/notifications")
