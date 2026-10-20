@@ -1217,3 +1217,13 @@ details.card:not([open]) { padding-bottom: 0; }
   .cmr-dot.alarm.offline, .cmr-region.alarm, .cmr-alarm-tags rect, .cmr-alarm-tags path, .map-legend .offline-key { animation: none; }
   .cmr-region.alarm { fill: color-mix(in srgb, var(--alarm) 45%, var(--map-l1)); }
 }
+
+/* Markiyas AI footnote: small, fixed in the bottom-right corner so it never changes the one-screen layout. */
+.brand-foot { position: fixed; right: 12px; bottom: 4px; z-index: 5; padding: 1px 8px; border-radius: 999px; pointer-events: none;
+  font-size: .58rem; font-weight: 700; letter-spacing: .08em; color: #146DF8;
+  background: color-mix(in srgb, var(--surface-1, #fff) 80%, transparent); }
+:root[data-theme="dark"] .brand-foot { color: #6EA6FF; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .brand-foot { color: #6EA6FF; } }
+@media (max-width: 760px) { .brand-foot { right: 50%; transform: translateX(50%); white-space: nowrap; font-size: .52rem; } }
+@media print { .brand-foot { position: static; display: block; text-align: right; background: none; } }
+@media (max-width: 760px) { .fit-scroll { max-height: 75vh; } }
