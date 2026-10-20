@@ -86,23 +86,30 @@
   <g class="cmr-outline" aria-hidden="true">{% for s in m.shapes %}<path d="{{ s.d }}"/>{% endfor %}</g>
   <g class="cmr-regions">{% for s in m.shapes %}{% set r = s.region %}
     <a href="/branches?region={{ s.code }}" aria-label="{{ r.name if r else s.code }}">
-      <path class="cmr-region lvl-{{ s.level }}" d="{{ s.d }}" data-tip="{% if r %}{{ r.name }} · {{ r.branches }} branches · {{ r.online + r.degraded }}/{{ r.monitored }} online{% if r.availability is not none %} ({{ r.availability }}%){% endif %} · {{ r.alerts }} open alerts · {{ r.security }} security · {{ r.exceptions }} exceptions{% else %}{{ s.code }}: no branches in scope{% endif %}"/>
+      <path class="cmr-region lvl-{{ s.level }} {{ 'alarm' if r and r.offline }}" d="{{ s.d }}" data-tip="{% if r %}{{ r.name }} · {% if r.offline %}⚠ {{ r.offline }} BRANCH{{ 'ES' if r.offline != 1 }} OFFLINE · {% endif %}{{ r.branches }} branches · {{ r.online + r.degraded }}/{{ r.monitored }} online{% if r.availability is not none %} ({{ r.availability }}%){% endif %} · {{ r.alerts }} open alerts · {{ r.security }} security · {{ r.exceptions }} exceptions{% else %}{{ s.code }}: no branches in scope{% endif %}"/>
     </a>{% endfor %}</g>
   <g class="cmr-dots">{% for d in m.dots %}
-    {% if d.p1 %}<a class="cmr-p1" href="/branches/{{ d.branch.id }}" aria-label="P1 incident open at {{ d.branch.code }} {{ d.branch.name }}">
-    <circle class="cmr-ping p1" cx="{{ d.x }}" cy="{{ d.y }}" r="8"/>
-    <circle class="cmr-ping p1 late" cx="{{ d.x }}" cy="{{ d.y }}" r="8"/>
-    <circle class="cmr-dot p1 st-{{ d.state }}" cx="{{ d.x }}" cy="{{ d.y }}" r="8"
-      data-tip="P1 · {{ d.branch.code }} {{ d.branch.name }} · {{ d.state.replace('_', ' ') }} · click for the branch"/></a>
+    {% set offline = d.state == "offline" %}
+    {% if d.p1 or offline %}{% set R = 10 if offline else 8 %}
+    <a class="cmr-p1" href="/branches/{{ d.branch.id }}" aria-label="{{ 'Branch offline' if offline else 'P1 incident open' }}: {{ d.branch.code }} {{ d.branch.name }}">
+    <circle class="cmr-ping alarm {{ 'offline' if offline }}" cx="{{ d.x }}" cy="{{ d.y }}" r="{{ R }}"/>
+    <circle class="cmr-ping alarm late {{ 'offline' if offline }}" cx="{{ d.x }}" cy="{{ d.y }}" r="{{ R }}"/>
+    <circle class="cmr-dot alarm {{ 'p1' if d.p1 }} {{ 'offline' if offline }} st-{{ d.state }}" cx="{{ d.x }}" cy="{{ d.y }}" r="{{ R }}"
+      data-tip="{{ 'BRANCH OFFLINE' if offline else 'P1' }} · {{ d.branch.code }} {{ d.branch.name }} · {{ d.state.replace('_', ' ') }} · click for the branch"/></a>
     {% else %}
-    <circle class="cmr-dot st-{{ d.state }}" cx="{{ d.x }}" cy="{{ d.y }}" r="{{ 6 if d.state == 'offline' else 4.2 if d.state == 'degraded' else 2.6 }}"
+    <circle class="cmr-dot st-{{ d.state }}" cx="{{ d.x }}" cy="{{ d.y }}" r="{{ 4.2 if d.state == 'degraded' else 2.6 }}"
       data-tip="{{ d.branch.code }} {{ d.branch.name }} · {{ d.state.replace('_', ' ') }}" aria-hidden="true"/>
-    {% if d.state == "offline" %}<circle class="cmr-ping" cx="{{ d.x }}" cy="{{ d.y }}" r="6" aria-hidden="true"/>{% endif %}
     {% endif %}
   {% endfor %}</g>
   <g class="cmr-labels" aria-hidden="true">{% for s in m.shapes %}{% set r = s.region %}
     <text x="{{ s.cx }}" y="{{ s.cy }}" text-anchor="middle">{{ s.code }}</text>
     {% if r %}<text class="cmr-sub" x="{{ s.cx }}" y="{{ s.cy + 14 }}" text-anchor="middle">{% if m.metric == 'risk' %}{{ r.security }} sec · {{ r.exceptions }} exc{% else %}{{ r.availability if r.availability is not none else "—" }}{{ "%" if r.availability is not none }}{% endif %}</text>{% endif %}
+  {% endfor %}</g>
+  <g class="cmr-alarm-tags" aria-hidden="true">{% for d in m.dots if d.state == "offline" %}
+    {% set label = d.branch.code ~ " OFFLINE" %}{% set W = label | length * 8.6 + 18 %}
+    <rect x="{{ d.x - W / 2 }}" y="{{ d.y - 44 }}" width="{{ W }}" height="22" rx="11"/>
+    <path d="M{{ d.x - 6 }} {{ d.y - 23 }}h12l-6 7z"/>
+    <text x="{{ d.x }}" y="{{ d.y - 28.5 }}" text-anchor="middle">{{ label }}</text>
   {% endfor %}</g>
 </svg>
 {%- endmacro %}

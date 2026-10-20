@@ -38,7 +38,7 @@
   <div class="map-legend">
     <span><i class="lvl-1"></i>≥ 99.5%</span><span><i class="lvl-2"></i>97–99.5%</span><span><i class="lvl-3"></i>90–97%</span><span><i class="lvl-4"></i>&lt; 90%</span><span><i class="lvl-0"></i>Not yet live</span>
     <span class="sep"></span>
-    <span><i class="dot st-online"></i>Online</span><span><i class="dot st-degraded"></i>Degraded</span><span><i class="dot st-offline"></i>Offline</span><span><i class="dot p1-key"></i>P1 incident</span>
+    <span><i class="dot st-online"></i>Online</span><span><i class="dot st-degraded"></i>Degraded</span><span><i class="dot offline-key"></i>Branch offline</span><span><i class="dot p1-key"></i>P1 incident</span>
   </div>
   {% set p1 = cmr.dots | selectattr("p1") | list | reverse | list %}
   {% if p1 %}<ul class="p1-list" aria-label="Branches with a P1 incident">{% for d in p1[:6] %}

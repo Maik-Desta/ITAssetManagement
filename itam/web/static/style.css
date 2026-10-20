@@ -1155,8 +1155,8 @@ details.card:not([open]) { padding-bottom: 0; }
 @media (max-width: 1180px) { .noc-map { order: 2; } }
 
 .cmr-dot.p1 { fill: var(--critical); stroke: #fff; stroke-width: 2.5; cursor: pointer; animation: p1-blink .9s ease-in-out infinite; }
-.cmr-ping.p1 { stroke-width: 3; animation-duration: 1.4s; }
-.cmr-ping.p1.late { animation-delay: .7s; }
+.cmr-ping.alarm { stroke-width: 3; animation-duration: 1.4s; }
+.cmr-ping.alarm.late { animation-delay: .7s; }
 .cmr-p1:focus-visible { outline: none; }
 .cmr-p1:focus-visible .cmr-dot { stroke: var(--accent); stroke-width: 4; }
 @keyframes p1-blink { 0%, 100% { opacity: 1; } 50% { opacity: .2; } }
@@ -1164,7 +1164,7 @@ details.card:not([open]) { padding-bottom: 0; }
   animation: p1-blink .9s ease-in-out infinite; }
 @media (prefers-reduced-motion: reduce) {
   .cmr-dot.p1, .map-legend .p1-key { animation: none; }
-  .cmr-ping.p1 { animation: none; opacity: .6; }
+  .cmr-ping.alarm { animation: none; opacity: .6; }
 }
 
 .ob-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
@@ -1191,4 +1191,29 @@ details.card:not([open]) { padding-bottom: 0; }
   .content[data-section="noc"] .kpi-value { font-size: 1.2rem; }
   .content[data-section="noc"] .outage-banner { gap: 4px 12px; }
   .content[data-section="noc"] .p1-list li:nth-child(n+4):not(.muted) { display: none; }
+}
+
+/* Offline branch on the map: very red, flashing, glowing; its region pulses red too. ---------------- */
+:root { --alarm: #ff1010; --alarm-deep: #9b0000; }
+.cmr-dot.alarm.offline { fill: var(--alarm); stroke: #fff; stroke-width: 3; filter: drop-shadow(0 0 6px var(--alarm));
+  animation: offline-flash .7s steps(1, end) infinite; }
+.cmr-ping.alarm.offline { stroke: var(--alarm); stroke-width: 4; animation-duration: 1.1s; }
+.cmr-ping.alarm.offline.late { animation-delay: .55s; }
+@keyframes offline-flash {
+  0% { fill: var(--alarm); filter: drop-shadow(0 0 10px var(--alarm)) drop-shadow(0 0 18px var(--alarm)); }
+  50% { fill: var(--alarm-deep); filter: drop-shadow(0 0 2px var(--alarm)); }
+}
+.cmr-region.alarm { stroke: var(--alarm); stroke-width: 2.5; animation: region-alarm 1.4s ease-in-out infinite; }
+@keyframes region-alarm { 0%, 100% { fill-opacity: 1; } 50% { fill: var(--alarm); fill-opacity: .55; } }
+.cmr-alarm-tags { pointer-events: none; }
+.cmr-alarm-tags rect, .cmr-alarm-tags path { fill: var(--alarm); stroke: #fff; stroke-width: 1.5;
+  filter: drop-shadow(0 0 6px var(--alarm)); animation: offline-tag .7s steps(1, end) infinite; }
+.cmr-alarm-tags path { stroke: none; }
+.cmr-alarm-tags text { font-size: 13px; font-weight: 900; letter-spacing: .06em; fill: #fff; }
+@keyframes offline-tag { 50% { fill: var(--alarm-deep); filter: none; } }
+.map-legend .offline-key { background: var(--alarm); box-shadow: 0 0 6px var(--alarm); animation: offline-flash-key .7s steps(1, end) infinite; }
+@keyframes offline-flash-key { 50% { background: var(--alarm-deep); box-shadow: none; } }
+@media (prefers-reduced-motion: reduce) {
+  .cmr-dot.alarm.offline, .cmr-region.alarm, .cmr-alarm-tags rect, .cmr-alarm-tags path, .map-legend .offline-key { animation: none; }
+  .cmr-region.alarm { fill: color-mix(in srgb, var(--alarm) 45%, var(--map-l1)); }
 }
