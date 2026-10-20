@@ -172,7 +172,7 @@
     <div><h2>Assets by branch</h2>
       {% set empty_branches = bd.branches | selectattr("counts.total", "equalto", 0) | list %}
       <p class="muted small">Branches with problems are listed first.{% if empty_branches %} {{ empty_branches | length }} branch(es) have no registered assets yet (not onboarded) and are hidden.{% endif %}</p></div>
-    <form method="get" action="/dashboard#by-branch" class="actions no-print">
+    <form method="get" action="/dashboard/details#by-branch" class="actions no-print">
       <select id="region" name="region" data-autosubmit aria-label="Region">
         <option value="">All regions</option>
         {% for r in bd.regions %}<option value="{{ r.region.code }}" {{ "selected" if region == r.region.code }}>{{ r.region.code }} · {{ r.region.name }}</option>{% endfor %}

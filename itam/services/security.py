@@ -241,12 +241,16 @@ def check_readers(db: Session, now: datetime | None = None) -> int:
 
     now = now or utcnow()
     cutoff = now - timedelta(minutes=settings.reader_stale_minutes)
+    # A reader that went silent recently is the tamper signal; one silent for over a day is already known
+    # (decommissioned, or never commissioned) and is shown on the health widgets instead of re-alarming.
+    recent = now - timedelta(hours=24)
     fixed = [k.value for k in (ReadPointKind.DOCK_IN, ReadPointKind.CAGE, ReadPointKind.DISPATCH,
                                ReadPointKind.CABINET, ReadPointKind.EXIT_PORTAL)]
     raised = 0
     for rp in db.execute(select(ReadPoint).where(ReadPoint.is_active.is_(True), ReadPoint.kind.in_(fixed),
                                                  ReadPoint.last_heartbeat_at.is_not(None),
-                                                 ReadPoint.last_heartbeat_at < cutoff)).scalars():
+                                                 ReadPoint.last_heartbeat_at < cutoff,
+                                                 ReadPoint.last_heartbeat_at >= recent)).scalars():
         if open_alert(db, f"TAMPER:RP:{rp.id}") is None:
             reader_tamper(db, rp, rp.last_heartbeat_at, f"No reads or heartbeat since {rp.last_heartbeat_at:%Y-%m-%d %H:%M} UTC")
             raised += 1

@@ -50,7 +50,7 @@ def test_dashboard_numbers_match_asset_list_links(client, db, world):
     _world_with_states(db, world)
     db.commit()
     login(client, "itam")
-    html = client.get("/dashboard").text
+    html = client.get("/dashboard/details").text
     assert "Total branches" in html and "Assets by region" in html and "Assets by branch" in html
     expected = dash.asset_breakdown(db, [world.hq, world.b1, world.b2, world.b3])["totals"]["counts"]
     for key, _label, flag, _help in dash.BREAKDOWN_COLUMNS:
@@ -79,9 +79,22 @@ def test_inventory_store_and_not_installed(client, db, world):
     assert [n["branch"].code for n in inv["not_installed"]] == ["0013"]
     assert {t["type"]: t["total"] for t in inv["types"]}["RTR"] == 3
     login(client, "cio")
-    html = client.get("/dashboard").text
+    html = client.get("/dashboard/details").text
     for text in ("Key messages for the CEO", "Deployment pipeline", "Assets by type", "Asset type by region",
                  "Purchased, not yet assigned to a branch", "Delivered to branches, not yet installed"):
         assert text in html
     assert "1 matching records" in client.get("/assets?flag=store").text
     assert "1 matching records" in client.get("/assets?flag=not_installed").text
+
+
+def test_command_centre_boards(client, db, world):
+    _world_with_states(db, world)
+    db.commit()
+    login(client, "ciso")
+    html = client.get("/dashboard").text  # CISO lands on the security board
+    assert "Security &amp; asset assurance" in html and "Audit log integrity" in html and 'class="cmr-map"' in html
+    for board, title in (("ceo", "State of the IT estate"), ("cio", "Service operations")):
+        page = client.get(f"/dashboard?board={board}")
+        assert page.status_code == 200 and title in page.text
+    assert client.get("/dashboard?board=nonsense").status_code == 200
+    assert "Asset type by region" in client.get("/dashboard/details").text

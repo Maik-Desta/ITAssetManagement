@@ -45,7 +45,16 @@ def home():
 
 
 @router.get("/dashboard")
-def dashboard(request: Request, db: DB, user: CurrentUser, region: str = ""):
+def dashboard(request: Request, db: DB, user: CurrentUser, board: str = ""):
+    """One-page command centre: CEO, CIO or CISO board (defaults to the user's role)."""
+    from itam.services import command as cmd_svc
+
+    board = board if board in cmd_svc.BOARDS else cmd_svc.default_board(user)
+    return render(request, "board.html", user, d=cmd_svc.build(db, user, board), refresh=120)
+
+
+@router.get("/dashboard/details")
+def dashboard_details(request: Request, db: DB, user: CurrentUser, region: str = ""):
     summary = dash_svc.executive_summary(db, user)
     inv = dash_svc.asset_inventory(db, summary["branches"])
     return render(request, "dashboard.html", user, s=summary, inv=inv, region=region,

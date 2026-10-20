@@ -1,0 +1,101 @@
+{# Command-centre charts: server-rendered SVG (no chart library; CSP-safe). Colours come from CSS tone classes. #}
+
+{# Donut. segs: [{label, n, tone, href?}]; centre shows `value` over `caption`. #}
+{% macro donut(segs, value, caption, aria="") -%}
+{%- set total = segs | sum(attribute="n") -%}
+{%- set C = 251.327 -%}
+<div class="donut-wrap">
+<svg class="donut" viewBox="0 0 120 120" role="img" aria-label="{{ aria or caption }}">
+  <circle class="donut-track" cx="60" cy="60" r="40"/>
+  {%- set ns = namespace(off=0) %}
+  {% for s in segs %}{% if s.n and total %}{% set len = C * s.n / total %}
+  <circle class="donut-seg tone-{{ s.tone }}" cx="60" cy="60" r="40" stroke-dasharray="{{ '%.2f' | format([len - 1.5, 0.5] | max) }} {{ '%.2f' | format(C - [len - 1.5, 0.5] | max) }}"
+    stroke-dashoffset="{{ '%.2f' | format(-ns.off) }}" transform="rotate(-90 60 60)" tabindex="0" data-tip="{{ s.label }}: {{ '{:,}'.format(s.n) }} ({{ (100 * s.n / total) | round | int }}%)"/>
+  {% set ns.off = ns.off + len %}{% endif %}{% endfor %}
+  <text class="donut-value" x="60" y="60" text-anchor="middle">{{ value }}</text>
+  <text class="donut-caption" x="60" y="76" text-anchor="middle">{{ caption }}</text>
+</svg>
+<ul class="donut-legend">{% for s in segs %}
+  <li>{% if s.href %}<a href="{{ s.href }}">{% endif %}<span class="dot tone-{{ s.tone }}"></span><span class="lg-label">{{ s.label }}</span><strong>{{ "{:,}".format(s.n) }}</strong>{% if s.href %}</a>{% endif %}</li>
+{% endfor %}</ul>
+</div>
+{%- endmacro %}
+
+{# Semicircle gauge 0-100 with target tick. #}
+{% macro gauge(value, target, caption, unit="%", tone=None) -%}
+{%- set v = value if value is not none else 0 -%}
+{%- set t = tone or ("good" if v >= target else "warning" if v >= target - 5 else "critical") -%}
+{%- set C = 157.08 -%}
+<svg class="gauge" viewBox="0 0 120 72" role="img" aria-label="{{ caption }}: {{ value if value is not none else 'no data' }}{{ unit }}, target {{ target }}{{ unit }}">
+  <path class="gauge-track" d="M10 62 A50 50 0 0 1 110 62"/>
+  {% if value is not none %}<path class="gauge-fill tone-{{ t }}" d="M10 62 A50 50 0 0 1 110 62" pathLength="100" stroke-dasharray="{{ [v, 0.5] | max }} 100"/>{% endif %}
+  <text class="gauge-value" x="60" y="54" text-anchor="middle">{{ value if value is not none else "—" }}<tspan class="gauge-unit">{{ unit if value is not none else "" }}</tspan></text>
+  <text class="gauge-caption" x="60" y="68" text-anchor="middle">target {{ target }}{{ unit }}</text>
+</svg>
+{%- endmacro %}
+
+{# Weekly trend: two bar series (opened / resolved) with an optional line on a second scale. #}
+{% macro trend(rows, a_key, a_label, b_key, b_label, line_key=None, line_label="", line_unit="") -%}
+{%- set W, H, L, R, B, T = 420, 170, 26, 30, 22, 14 -%}
+{%- set top = [rows | map(attribute=a_key) | max, rows | map(attribute=b_key) | max, 1] | max -%}
+{%- set lvals = rows | map(attribute=line_key) | select("number") | list if line_key else [] -%}
+{%- set ltop = ([lvals | max, 1] | max) if lvals else 1 -%}
+{%- set band = (W - L - R) / (rows | length) -%}{%- set bw = [band * 0.32, 14] | min -%}
+<svg class="trend" viewBox="0 0 {{ W }} {{ H }}" role="img" aria-label="{{ a_label }} and {{ b_label }} per week">
+  {% for i in range(4) %}{% set y = H - B - (H - B - T) * i / 3 %}
+  <line class="gridline" x1="{{ L }}" x2="{{ W - R }}" y1="{{ y }}" y2="{{ y }}"/>
+  <text class="axis" x="{{ L - 5 }}" y="{{ y + 3 }}" text-anchor="end">{{ (top * i / 3) | round | int }}</text>
+  {% endfor %}
+  {% for r in rows %}{% set x = L + band * loop.index0 + band / 2 %}
+    {% set ha = (H - B - T) * r[a_key] / top %}{% set hb = (H - B - T) * r[b_key] / top %}
+    <rect class="bar-a" x="{{ x - bw - 1 }}" y="{{ H - B - ha }}" width="{{ bw }}" height="{{ [ha, 0.5] | max }}" rx="2" tabindex="0" data-tip="Week to {{ r.label }} · {{ a_label }}: {{ r[a_key] }}"/>
+    <rect class="bar-b" x="{{ x + 1 }}" y="{{ H - B - hb }}" width="{{ bw }}" height="{{ [hb, 0.5] | max }}" rx="2" tabindex="0" data-tip="Week to {{ r.label }} · {{ b_label }}: {{ r[b_key] }}"/>
+    {% if loop.index0 % 2 == (rows | length - 1) % 2 %}<text class="axis" x="{{ x }}" y="{{ H - 6 }}" text-anchor="middle">{{ r.label }}</text>{% endif %}
+  {% endfor %}
+  {% if line_key and lvals %}
+  {%- set ns = namespace(d="", pen=False) -%}
+  {%- for r in rows -%}{%- set x = L + band * loop.index0 + band / 2 -%}
+    {%- if r[line_key] is not none -%}{%- set y = H - B - (H - B - T) * r[line_key] / ltop -%}
+      {%- set ns.d = ns.d ~ ("L" if ns.pen else "M") ~ ("%.1f,%.1f " | format(x, y)) -%}{%- set ns.pen = True -%}
+    {%- else -%}{%- set ns.pen = False -%}{%- endif -%}
+  {%- endfor %}
+  <path class="trend-line" d="{{ ns.d }}"/>
+  {% for r in rows %}{% if r[line_key] is not none %}{% set x = L + band * loop.index0 + band / 2 %}{% set y = H - B - (H - B - T) * r[line_key] / ltop %}
+  <circle class="trend-dot" cx="{{ x }}" cy="{{ y }}" r="3" tabindex="0" data-tip="Week to {{ r.label }} · {{ line_label }}: {{ r[line_key] }}{{ line_unit }}"/>{% endif %}{% endfor %}
+  <text class="axis" x="{{ W - R + 4 }}" y="{{ T + 3 }}">{{ ltop | round(1) }}{{ line_unit }}</text>
+  {% endif %}
+</svg>
+<div class="chart-legend"><span><i class="key bar-a"></i>{{ a_label }}</span><span><i class="key bar-b"></i>{{ b_label }}</span>{% if line_key %}<span><i class="key line"></i>{{ line_label }}</span>{% endif %}</div>
+{%- endmacro %}
+
+{# Horizontal bars. rows: [{label, value, max?, tone, href?, note?}]. #}
+{% macro hbars(rows, unit="", max=None) -%}
+{%- set top = max or ([rows | map(attribute="value") | select("number") | max if rows else 1, 1] | max) -%}
+<ul class="hbars">{% for r in rows %}
+  <li>{% if r.href %}<a href="{{ r.href }}">{% endif %}
+    <span class="hb-label">{{ r.label }}</span>
+    <span class="hb-track"><svg viewBox="0 0 100 8" preserveAspectRatio="none" aria-hidden="true"><rect class="hb-bg" width="100" height="8" rx="4"/>{% if r.value %}<rect class="hb-fill tone-{{ r.tone or 'info' }}" width="{{ [100 * r.value / top, 2] | max }}" height="8" rx="4"/>{% endif %}</svg></span>
+    <span class="hb-value">{{ r.value if r.value is not none else "—" }}{{ unit if r.value is not none else "" }}{% if r.note %}<small>{{ r.note }}</small>{% endif %}</span>
+  {% if r.href %}</a>{% endif %}</li>
+{% else %}<li class="muted small">No data.</li>{% endfor %}</ul>
+{%- endmacro %}
+
+{# Cameroon: national border + 10 regional borders, regions shaded by the board's metric, branches as dots. #}
+{% macro cameroon(m, regions_by_code) -%}
+<svg class="cmr-map" viewBox="0 0 {{ m.w }} {{ m.h }}" role="img" aria-label="Map of Cameroon: {{ 'security risk' if m.metric == 'risk' else 'service availability' }} by region and branch status">
+  <g class="cmr-outline" aria-hidden="true">{% for s in m.shapes %}<path d="{{ s.d }}"/>{% endfor %}</g>
+  <g class="cmr-regions">{% for s in m.shapes %}{% set r = s.region %}
+    <a href="/branches?region={{ s.code }}" aria-label="{{ r.name if r else s.code }}">
+      <path class="cmr-region lvl-{{ s.level }}" d="{{ s.d }}" data-tip="{% if r %}{{ r.name }} · {{ r.branches }} branches · {{ r.online + r.degraded }}/{{ r.monitored }} online{% if r.availability is not none %} ({{ r.availability }}%){% endif %} · {{ r.alerts }} open alerts · {{ r.security }} security · {{ r.exceptions }} exceptions{% else %}{{ s.code }}: no branches in scope{% endif %}"/>
+    </a>{% endfor %}</g>
+  <g class="cmr-dots" aria-hidden="true">{% for d in m.dots %}
+    <circle class="cmr-dot st-{{ d.state }}" cx="{{ d.x }}" cy="{{ d.y }}" r="{{ 6 if d.state == 'offline' else 4.2 if d.state == 'degraded' else 2.6 }}"
+      data-tip="{{ d.branch.code }} {{ d.branch.name }} · {{ d.state.replace('_', ' ') }}"/>
+    {% if d.state == "offline" %}<circle class="cmr-ping" cx="{{ d.x }}" cy="{{ d.y }}" r="6"/>{% endif %}
+  {% endfor %}</g>
+  <g class="cmr-labels" aria-hidden="true">{% for s in m.shapes %}{% set r = s.region %}
+    <text x="{{ s.cx }}" y="{{ s.cy }}" text-anchor="middle">{{ s.code }}</text>
+    {% if r %}<text class="cmr-sub" x="{{ s.cx }}" y="{{ s.cy + 14 }}" text-anchor="middle">{% if m.metric == 'risk' %}{{ r.security }} sec · {{ r.exceptions }} exc{% else %}{{ r.availability if r.availability is not none else "—" }}{{ "%" if r.availability is not none }}{% endif %}</text>{% endif %}
+  {% endfor %}</g>
+</svg>
+{%- endmacro %}

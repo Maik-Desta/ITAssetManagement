@@ -1,0 +1,165 @@
+{% extends "base.html" %}
+{% from "macros.html" import kpi, sev with context %}
+{% from "charts.html" import donut, gauge, trend, cameroon with context %}
+{% block title %}{{ d.boards[d.board] }} command centre{% endblock %}
+{% block content %}
+{% set p = d.priority %}
+<div class="cc-head">
+  <div class="cc-title">
+    <p class="cc-eyebrow">{{ settings.bank_name }} · IT asset &amp; infrastructure command centre</p>
+    <h1>{{ {"ceo": "State of the IT estate", "cio": "Service operations", "ciso": "Security &amp; asset assurance"}[d.board] | safe }}</h1>
+    <p class="cc-meta"><span class="live-dot" aria-hidden="true"></span>Live · {{ d.scope }} sites · {{ d.now | dt("%d %b %Y, %H:%M") }} UTC</p>
+  </div>
+  <nav class="cc-boards" aria-label="Choose a board">
+    {% for key, label in d.boards.items() %}<a href="/dashboard?board={{ key }}" class="{{ 'active' if key == d.board }}" {% if key == d.board %}aria-current="page"{% endif %}>{{ label }}</a>{% endfor %}
+    <a href="/dashboard/details" class="cc-more">Detailed views</a>
+  </nav>
+</div>
+
+{# ------------------------------------------------ KPI strip ------------------------------------------------ #}
+<div class="cc-kpis">
+{% if d.board == "ceo" %}
+  {{ kpi("Branches online", d.up ~ " / " ~ d.monitored, (d.branches - d.monitored) ~ " still to onboard", "/branches",
+         "good" if d.up == d.monitored else "critical", "branch", (d.up, d.monitored or 1)) }}
+  {{ kpi("Service availability", d.branch_availability if d.branch_availability is not none else "—", "monitored branches up", "/noc",
+         "good" if (d.branch_availability or 0) >= 99.5 else "warning", "pulse", None, "%") }}
+  {{ kpi("Assets live", "{:,}".format(d.live), "of " ~ "{:,}".format(d.assets) ~ " registered", "/assets?status=ACTIVE", "good", "check", (d.live, d.assets or 1)) }}
+  {{ kpi("Critical incidents", p.P1 ~ " / " ~ p.P2, "P1 critical / P2 major open", "/noc", "critical" if p.P1 else "good", "alert") }}
+  {{ kpi("Security alarms", d.security_count, d.security_p1 ~ " critical · " ~ d.suspected ~ " suspected removal", "/dashboard?board=ciso",
+         "critical" if d.security_p1 else "good", "shield") }}
+  {{ kpi("Warranty / EOL due", d.due, "within 90 days", "/dashboard/details#warranty", "warning" if d.due else "good", "clock") }}
+{% elif d.board == "cio" %}
+  {{ kpi("Availability", d.branch_availability if d.branch_availability is not none else "—", d.up ~ " of " ~ d.monitored ~ " branches up", "/noc",
+         "good" if (d.branch_availability or 0) >= 99.5 else "warning", "pulse", None, "%") }}
+  {{ kpi("Mean time to detect", d.mttd if d.mttd is not none else "—", "outages, last 30 days · target < 5 min", "/kpis",
+         "good" if d.mttd is not none and d.mttd < 5 else "warning", "search", None, " min" if d.mttd is not none else "") }}
+  {{ kpi("Mean time to restore", d.mttr_h if d.mttr_h is not none else "—", "failure → restored, last 30 days", "/kpis", "info", "clock", None, " h" if d.mttr_h is not none else "") }}
+  {{ kpi("Response SLA", d.sla if d.sla is not none else "—", d.sla_n ~ " acknowledged alerts, 30 days", "/noc",
+         "good" if (d.sla or 0) >= 95 else "critical", "target", None, "%" if d.sla is not none else "") }}
+  {{ kpi("Open incidents", d.open_alerts, p.P1 ~ " P1 · " ~ p.P2 ~ " P2 · " ~ p.P3 ~ " P3 · " ~ p.P4 ~ " P4", "/noc", "critical" if p.P1 else "info", "alert") }}
+  {{ kpi("Changes to approve", d.changes.pending, d.changes.approved ~ " approved · " ~ d.changes.in_progress ~ " in progress", "/changes?view=open",
+         "warning" if d.changes.pending else "good", "layers") }}
+{% else %}
+  {{ kpi("Security alarms", d.security_count, d.security_p1 ~ " critical (P1) open", "/noc", "critical" if d.security_p1 else "good", "shield") }}
+  {{ kpi("Suspected removals", d.suspected, "assets flagged by exit / cabinet reads", "/assets?flag=issues", "critical" if d.suspected else "good", "alert") }}
+  {{ kpi("Rogue / unapproved", d.unapproved, "devices on branch networks", "/exceptions?status=OPEN&type=UNAPPROVED_DEVICE",
+         "critical" if d.unapproved else "good", "search") }}
+  {{ kpi("Missing assets", d.missing, "not seen > 72 h, no approved change", "/assets?status=MISSING", "critical" if d.missing else "good", "pin") }}
+  {{ kpi("Exceptions > 30 days", d.ageing["> 30 d"], d.exceptions ~ " open in total", "/exceptions", "warning" if d.ageing["> 30 d"] else "good", "clock") }}
+  {{ kpi("Audit log integrity", "Intact" if d.chain and d.chain.ok else "BROKEN", "{:,}".format(d.chain.checked if d.chain else 0) ~ " entries hash-verified now",
+         "/audit-log", "good" if d.chain and d.chain.ok else "critical", "check") }}
+{% endif %}
+</div>
+
+{# ------------------------------------------------ Board grid ------------------------------------------------ #}
+<div class="cc-grid">
+  <section class="w w-map">
+    <header class="w-head"><h2>{{ "Security risk by region" if d.board == "ciso" else "Service availability by region" }}</h2>
+      <span class="w-note">{{ d.states.online }} online · {{ d.states.degraded }} degraded · {{ d.states.offline }} offline</span></header>
+    {{ cameroon(d.map, {}) }}
+    <div class="map-legend">
+      {% if d.board == "ciso" %}
+      <span><i class="lvl-1"></i>No risk</span><span><i class="lvl-2"></i>Low</span><span><i class="lvl-3"></i>Elevated</span><span><i class="lvl-4"></i>High</span>
+      {% else %}
+      <span><i class="lvl-1"></i>≥ 99.5%</span><span><i class="lvl-2"></i>97–99.5%</span><span><i class="lvl-3"></i>90–97%</span><span><i class="lvl-4"></i>&lt; 90%</span><span><i class="lvl-0"></i>Not yet live</span>
+      {% endif %}
+      <span class="sep"></span>
+      <span><i class="dot st-online"></i>Online</span><span><i class="dot st-degraded"></i>Degraded</span><span><i class="dot st-offline"></i>Offline</span>
+    </div>
+    <p class="w-foot">Region boundaries: geoBoundaries (CC BY 4.0). Click a region for its branches.</p>
+  </section>
+
+{% if d.board == "ceo" %}
+  <section class="w"><header class="w-head"><h2>Branch availability</h2><a class="w-link" href="/branches">Branches</a></header>
+    {{ gauge(d.branch_availability, 99.5, "branches up") }}
+    <div class="w-split"><div><strong>{{ d.states.online }}</strong><span>online</span></div><div><strong class="warn-text">{{ d.states.degraded }}</strong><span>degraded</span></div>
+      <div><strong class="fail">{{ d.states.offline }}</strong><span>offline</span></div><div><strong>{{ d.states.not_monitored }}</strong><span>to onboard</span></div></div></section>
+  <section class="w"><header class="w-head"><h2>Open incidents by priority</h2><a class="w-link" href="/noc">NOC</a></header>
+    {{ donut([{"label": "P1 critical", "n": p.P1, "tone": "critical", "href": "/noc"}, {"label": "P2 major", "n": p.P2, "tone": "serious", "href": "/noc"},
+              {"label": "P3 medium", "n": p.P3, "tone": "transit", "href": "/noc"}, {"label": "P4 minor", "n": p.P4, "tone": "neutral", "href": "/noc"}], d.open_alerts, "open") }}</section>
+  <section class="w"><header class="w-head"><h2>Rollout progress</h2><a class="w-link" href="/rollout">Rollout</a></header>
+    <ul class="hbars">{% for w in d.waves %}<li><a href="/rollout"><span class="hb-label">{{ w.label }}</span>
+      <span class="hb-track"><svg viewBox="0 0 100 8" preserveAspectRatio="none" aria-hidden="true"><rect class="hb-bg" width="100" height="8" rx="4"/><rect class="hb-fill tone-{{ 'good' if w.pct == 100 else 'info' }}" width="{{ [w.pct, 2] | max }}" height="8" rx="4"/></svg></span>
+      <span class="hb-value">{{ w.live }}/{{ w.total }}<small>{{ w.pct | round | int }}%</small></span></a></li>{% endfor %}</ul></section>
+  <section class="w"><header class="w-head"><h2>Asset lifecycle</h2><a class="w-link" href="/assets">Assets</a></header>
+    {{ donut([{"label": "Active", "n": d.life.ACTIVE, "tone": "good", "href": "/assets?status=ACTIVE"}, {"label": "Faulty", "n": d.life.FAULTY, "tone": "critical", "href": "/assets?status=FAULTY"},
+              {"label": "In stock", "n": d.life.IN_STOCK, "tone": "info", "href": "/assets?status=IN_STOCK"}, {"label": "In transit", "n": d.life.IN_TRANSIT, "tone": "transit", "href": "/assets?status=IN_TRANSIT"},
+              {"label": "Repair / missing", "n": d.life.UNDER_REPAIR + d.life.MISSING, "tone": "missing", "href": "/assets?flag=issues"}],
+             "{:,}".format(d.assets), "assets") }}</section>
+  <section class="w w-wide"><header class="w-head"><h2>Incidents per week · time to restore</h2><span class="w-note">last 8 weeks</span></header>
+    {{ trend(d.trend, "opened", "Opened", "resolved", "Resolved", "mttr", "Mean time to restore", " h") }}</section>
+  <section class="w"><header class="w-head"><h2>Regions needing attention</h2></header>
+    <ul class="hbars">{% for r in d.worst %}<li><a href="/branches?region={{ r.code }}"><span class="hb-label">{{ r.name }}</span>
+      <span class="hb-track"><svg viewBox="0 0 100 8" preserveAspectRatio="none" aria-hidden="true"><rect class="hb-bg" width="100" height="8" rx="4"/><rect class="hb-fill tone-{{ 'good' if (r.availability or 0) >= 99.5 else 'transit' if (r.availability or 0) >= 97 else 'critical' }}" width="{{ [r.availability or 0, 2] | max }}" height="8" rx="4"/></svg></span>
+      <span class="hb-value">{{ r.availability }}%<small>{{ r.alerts }} alerts</small></span></a></li>{% else %}<li class="muted small">No monitored regions.</li>{% endfor %}</ul></section>
+  <section class="w"><header class="w-head"><h2>Top risks now</h2><a class="w-link" href="/noc">All</a></header>
+    <ol class="risk-list">{% for a in (d.security_open[:3] + d.incidents)[:6] %}
+      <li><a href="/alerts/{{ a.id }}">{{ sev(a.severity) }}<span>{{ a.title }}</span></a><small>{{ a.detected_at | ago }}</small></li>
+    {% else %}<li class="muted small">Nothing open.</li>{% endfor %}</ol></section>
+
+{% elif d.board == "cio" %}
+  <section class="w"><header class="w-head"><h2>Open incidents by priority</h2><a class="w-link" href="/noc">NOC</a></header>
+    {{ donut([{"label": "P1 critical", "n": p.P1, "tone": "critical", "href": "/noc"}, {"label": "P2 major", "n": p.P2, "tone": "serious", "href": "/noc"},
+              {"label": "P3 medium", "n": p.P3, "tone": "transit", "href": "/noc"}, {"label": "P4 minor", "n": p.P4, "tone": "neutral", "href": "/noc"}], d.open_alerts, "open") }}</section>
+  <section class="w"><header class="w-head"><h2>Response SLA</h2><span class="w-note">30 days</span></header>
+    {{ gauge(d.sla, 95, "within target") }}
+    <div class="w-split"><div><strong>{{ d.mttd if d.mttd is not none else "—" }}</strong><span>min to detect</span></div><div><strong>{{ d.mttr_h if d.mttr_h is not none else "—" }}</strong><span>h to restore</span></div>
+      <div><strong>{{ d.asset_health if d.asset_health is not none else "—" }}%</strong><span>devices healthy</span></div></div></section>
+  <section class="w"><header class="w-head"><h2>Alerts by category</h2><span class="w-note">30 days</span></header>
+    <ul class="hbars">{% set top = (d.top_categories | map(attribute="n") | max) if d.top_categories else 1 %}{% for c in d.top_categories %}<li><span class="hb-label">{{ c.label }}</span>
+      <span class="hb-track"><svg viewBox="0 0 100 8" preserveAspectRatio="none" aria-hidden="true"><rect class="hb-bg" width="100" height="8" rx="4"/><rect class="hb-fill tone-info" width="{{ [100 * c.n / top, 2] | max }}" height="8" rx="4"/></svg></span>
+      <span class="hb-value">{{ c.n }}</span></li>{% else %}<li class="muted small">No alerts in 30 days.</li>{% endfor %}</ul></section>
+  <section class="w"><header class="w-head"><h2>Change &amp; delivery pipeline</h2><a class="w-link" href="/changes">Changes</a></header>
+    <div class="pipe">
+      <a href="/changes?view=mine"><strong>{{ d.changes.pending }}</strong><span>to approve</span></a>
+      <a href="/changes?view=open"><strong>{{ d.changes.approved }}</strong><span>approved</span></a>
+      <a href="/changes?view=open"><strong>{{ d.changes.in_progress }}</strong><span>in progress</span></a>
+      <a href="/shipments?status=IN_TRANSIT"><strong>{{ d.shipments.transit }}</strong><span>in transit</span></a>
+      <a href="/shipments?status=VARIANCE" class="{{ 'bad' if d.shipments.variance }}"><strong>{{ d.shipments.variance }}</strong><span>delivery variance</span></a>
+    </div></section>
+  <section class="w w-wide"><header class="w-head"><h2>Incidents opened vs resolved · time to restore</h2><span class="w-note">last 8 weeks</span></header>
+    {{ trend(d.trend, "opened", "Opened", "resolved", "Resolved", "mttr", "Mean time to restore", " h") }}</section>
+  <section class="w"><header class="w-head"><h2>Incident queue</h2><a class="w-link" href="/noc">All</a></header>
+    <ol class="risk-list">{% for a in d.incidents %}
+      <li><a href="/alerts/{{ a.id }}">{{ sev(a.severity) }}<span>{{ a.title }}</span></a><small>{{ a.detected_at | ago }}</small></li>
+    {% else %}<li class="muted small">No open incidents.</li>{% endfor %}</ol></section>
+  <section class="w"><header class="w-head"><h2>Monitoring &amp; tracking estate</h2></header>
+    <ul class="hbars">
+      <li><span class="hb-label">Collectors reporting</span><span class="hb-track"><svg viewBox="0 0 100 8" preserveAspectRatio="none" aria-hidden="true"><rect class="hb-bg" width="100" height="8" rx="4"/><rect class="hb-fill tone-{{ 'good' if d.collectors_ok == d.collectors else 'critical' }}" width="{{ [100 * d.collectors_ok / (d.collectors or 1), 2] | max }}" height="8" rx="4"/></svg></span><span class="hb-value">{{ d.collectors_ok }}/{{ d.collectors }}</span></li>
+      <li><span class="hb-label">RFID readers online</span><span class="hb-track"><svg viewBox="0 0 100 8" preserveAspectRatio="none" aria-hidden="true"><rect class="hb-bg" width="100" height="8" rx="4"/><rect class="hb-fill tone-{{ 'good' if d.readers_ok == d.readers else 'transit' }}" width="{{ [100 * d.readers_ok / (d.readers or 1), 2] | max }}" height="8" rx="4"/></svg></span><span class="hb-value">{{ d.readers_ok }}/{{ d.readers }}</span></li>
+      <li><span class="hb-label">Assets RFID-tagged</span><span class="hb-track"><svg viewBox="0 0 100 8" preserveAspectRatio="none" aria-hidden="true"><rect class="hb-bg" width="100" height="8" rx="4"/><rect class="hb-fill tone-info" width="{{ [d.rfid.retrofitted or 0, 2] | max }}" height="8" rx="4"/></svg></span><span class="hb-value">{{ d.rfid.retrofitted }}%</span></li>
+      <li><span class="hb-label">Portal read rate</span><span class="hb-track"><svg viewBox="0 0 100 8" preserveAspectRatio="none" aria-hidden="true"><rect class="hb-bg" width="100" height="8" rx="4"/><rect class="hb-fill tone-{{ 'good' if (d.rfid.portal_read_rate or 0) >= 99 else 'transit' }}" width="{{ [d.rfid.portal_read_rate or 0, 2] | max }}" height="8" rx="4"/></svg></span><span class="hb-value">{{ d.rfid.portal_read_rate if d.rfid.portal_read_rate is not none else "—" }}%</span></li>
+      <li><span class="hb-label">Blueprint compliance</span><span class="hb-track"><svg viewBox="0 0 100 8" preserveAspectRatio="none" aria-hidden="true"><rect class="hb-bg" width="100" height="8" rx="4"/><rect class="hb-fill tone-{{ 'good' if (d.rfid.blueprint or 0) >= 100 else 'transit' }}" width="{{ [d.rfid.blueprint or 0, 2] | max }}" height="8" rx="4"/></svg></span><span class="hb-value">{{ d.rfid.blueprint if d.rfid.blueprint is not none else "—" }}%</span></li>
+    </ul></section>
+
+{% else %}
+  <section class="w w-tall"><header class="w-head"><h2>Security alarms</h2><a class="w-link" href="/noc">All</a></header>
+    <ol class="risk-list">{% for a in d.security_open %}
+      <li><a href="/alerts/{{ a.id }}">{{ sev(a.severity) }}<span>{{ a.title }}</span></a>
+        <small>{{ a.detected_at | ago }}{% if a.clips %} · {{ a.clips | length }} clip{{ "s" if a.clips | length > 1 }} {{ "archived" if a.clips[0].status == "ARCHIVED" else "requested" }}{% endif %}</small></li>
+    {% else %}<li class="muted small">No open security alarms.</li>{% endfor %}</ol></section>
+  <section class="w"><header class="w-head"><h2>Open exceptions by type</h2><a class="w-link" href="/exceptions">Register</a></header>
+    {% set tones = ["critical", "serious", "transit", "missing", "info", "store"] %}
+    {% set segs = [] %}{% for t, n in d.exc_types %}{% set _ = segs.append({"label": t.replace("_", " ").capitalize(), "n": n, "tone": tones[loop.index0 % 6], "href": "/exceptions?status=OPEN&type=" ~ t}) %}{% endfor %}
+    {{ donut(segs, d.exceptions, "open") }}</section>
+  <section class="w"><header class="w-head"><h2>Exception ageing</h2><span class="w-note">target: closed in 30 days</span></header>
+    <ul class="hbars">{% set top = [d.ageing.values() | max, 1] | max %}{% for k, v in d.ageing.items() %}<li><a href="/exceptions"><span class="hb-label">Open {{ k }}</span>
+      <span class="hb-track"><svg viewBox="0 0 100 8" preserveAspectRatio="none" aria-hidden="true"><rect class="hb-bg" width="100" height="8" rx="4"/><rect class="hb-fill tone-{{ 'critical' if loop.last else 'transit' if loop.index == 2 else 'info' }}" width="{{ [100 * v / top, 2] | max }}" height="8" rx="4"/></svg></span>
+      <span class="hb-value">{{ v }}</span></a></li>{% endfor %}</ul></section>
+  <section class="w"><header class="w-head"><h2>Controls</h2><a class="w-link" href="/controls">Tests</a></header>
+    <ul class="controls">
+      <li class="{{ 'ok' if d.pci_unmonitored == 0 else 'bad' }}"><strong>{{ d.pci_unmonitored }}</strong><span>PCI-scope devices not monitored <small>of {{ d.pci }}</small></span></li>
+      <li class="{{ 'ok' if d.readers_ok == d.readers else 'bad' }}"><strong>{{ d.readers_ok }}/{{ d.readers }}</strong><span>RFID readers reporting</span></li>
+      <li class="{{ 'ok' if d.wiped == d.disposals else 'bad' }}"><strong>{{ d.wiped }}/{{ d.disposals }}</strong><span>disposals with data-wipe evidence</span></li>
+      <li class="{{ 'ok' if (d.clips.REQUESTED or 0) == 0 else 'warn' }}"><strong>{{ d.clips.ARCHIVED or 0 }}</strong><span>camera clips hashed as evidence <small>{{ (d.clips.REQUESTED or 0) + (d.clips.NOT_CONFIGURED or 0) }} pending</small></span></li>
+      <li class="{{ 'ok' if (d.rfid.unmatched_installs or 0) == 0 else 'bad' }}"><strong>{{ d.rfid.unmatched_installs }}</strong><span>installs without manifest match</span></li>
+    </ul></section>
+  <section class="w w-wide"><header class="w-head"><h2>Security events per week</h2><span class="w-note">last 8 weeks</span></header>
+    {{ trend(d.trend, "security", "Security alarms", "outages", "Outages") }}</section>
+  <section class="w"><header class="w-head"><h2>Riskiest regions</h2></header>
+    <ul class="hbars">{% set rs = d.regions | sort(attribute="risk", reverse=True) %}{% set top = [rs[0].risk if rs else 1, 1] | max %}{% for r in rs[:5] %}<li><a href="/branches?region={{ r.code }}"><span class="hb-label">{{ r.name }}</span>
+      <span class="hb-track"><svg viewBox="0 0 100 8" preserveAspectRatio="none" aria-hidden="true"><rect class="hb-bg" width="100" height="8" rx="4"/>{% if r.risk %}<rect class="hb-fill tone-{{ 'critical' if r.security else 'transit' }}" width="{{ [100 * r.risk / top, 2] | max }}" height="8" rx="4"/>{% endif %}</svg></span>
+      <span class="hb-value">{{ r.security }}<small>sec · {{ r.exceptions }} exc</small></span></a></li>{% endfor %}</ul></section>
+{% endif %}
+</div>
+{% endblock %}
