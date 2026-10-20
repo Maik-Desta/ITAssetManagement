@@ -1,8 +1,16 @@
 {% extends "base.html" %}
+{% from "macros.html" import kpi with context %}
 {% block title %}Controls testing{% endblock %}
 {% block content %}
 {% set failed = tests | rejectattr("passed") | list %}
 <div class="page-head"><div><h1>Controls testing</h1><p>Independent review of controls, approvals and audit trail (3rd line of defence) · {{ tests | length - failed | length }} of {{ tests | length }} passing</p></div></div>
+<div class="kpi-grid">
+  {{ kpi("Controls passing", tests | length - failed | length, "of " ~ (tests | length) ~ " tested now", None,
+         "good" if not failed else "critical", "shield", (tests | length - failed | length, tests | length or 1), "/ " ~ (tests | length)) }}
+  {{ kpi("Pass rate", pass_pct if pass_pct is not none else "—", "3rd line of defence", None, "good" if pass_pct == 100 else "warning", "gauge", None, "%") }}
+  {{ kpi("Failing controls", failed | length, (failed | map(attribute="name") | join(", ")) or "none", None, "critical" if failed else "good", "alert") }}
+  {{ kpi("Findings", findings, "records behind failing tests", None, "critical" if findings else "good", "search") }}
+</div>
 <section class="card"><div class="table-wrap"><table>
   <thead><tr><th>Control</th><th>Test</th><th>Result</th><th class="num">Exceptions</th><th>Examples</th></tr></thead>
   <tbody>{% for t in tests %}

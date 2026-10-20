@@ -212,7 +212,11 @@ def reconciliation_export(request: Request, db: DB, user: CurrentUser):
 @router.get("/controls")
 def controls(request: Request, db: DB, user: CurrentUser):
     require(user, "controls.view")
-    return render(request, "controls.html", user, tests=audit_svc.control_tests(db))
+    tests = audit_svc.control_tests(db)
+    passed = sum(1 for t in tests if t["passed"])
+    return render(request, "controls.html", user, tests=tests, passed=passed,
+                  pass_pct=round(100.0 * passed / len(tests), 1) if tests else None,
+                  findings=sum(t["count"] for t in tests if not t["passed"]))
 
 
 @router.get("/audit-log")
@@ -229,5 +233,16 @@ def audit_log(request: Request, db: DB, user: CurrentUser, actor: str = "", acti
     size = 100
     rows = db.execute(q.order_by(AuditLogEntry.id.desc()).offset((max(page, 1) - 1) * size).limit(size)).scalars().all()
     verification = auditlog.verify_chain(db) if verify else None
+    from datetime import timedelta
+
+    day, week = utcnow() - timedelta(days=1), utcnow() - timedelta(days=7)
+    stats = {
+        "total": db.execute(select(func.count(AuditLogEntry.id))).scalar_one(),
+        "day": db.execute(select(func.count(AuditLogEntry.id)).where(AuditLogEntry.at >= day)).scalar_one(),
+        "actors": db.execute(select(func.count(func.distinct(AuditLogEntry.actor))).where(AuditLogEntry.at >= week)).scalar_one(),
+        "top": [{"label": a, "n": n} for a, n in db.execute(
+            select(AuditLogEntry.action, func.count(AuditLogEntry.id)).where(AuditLogEntry.at >= week)
+            .group_by(AuditLogEntry.action).order_by(func.count(AuditLogEntry.id).desc()).limit(6)).all()],
+    }
     return render(request, "audit_log.html", user, rows=rows, actor=actor, action=action, entity=entity,
-                  page=max(page, 1), size=size, verification=verification)
+                  page=max(page, 1), size=size, verification=verification, stats=stats)

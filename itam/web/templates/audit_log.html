@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "macros.html" import kpi with context %}
 {% block title %}Audit trail{% endblock %}
 {% block content %}
 <div class="page-head"><div><h1>Audit trail</h1><p>Append-only and hash-chained: every entry's SHA-256 covers the previous one, and database triggers block updates and deletes.</p></div>
@@ -7,6 +8,17 @@
   {% if verification[0] %}<div class="flash success">✓ Chain intact — {{ verification[1] }} entries verified.</div>
   {% else %}<div class="flash error">✗ Chain broken at entry {{ verification[2] }} (checked {{ verification[1] }}).</div>{% endif %}
 {% endif %}
+<div class="summary-band">
+  <section class="mix-card"><div class="mix-head"><span class="mix-title">Most frequent actions · 7 days</span></div>
+    <ul class="hbars">{% set top = (stats.top | map(attribute="n") | max) if stats.top else 1 %}{% for a in stats.top %}<li><a href="/audit-log?action={{ a.label }}"><span class="hb-label mono">{{ a.label }}</span>
+      <span class="hb-track"><svg viewBox="0 0 100 8" preserveAspectRatio="none" aria-hidden="true"><rect class="hb-bg" width="100" height="8" rx="4"/><rect class="hb-fill tone-info" width="{{ [100 * a.n / top, 2] | max }}" height="8" rx="4"/></svg></span>
+      <span class="hb-value">{{ "{:,}".format(a.n) }}</span></a></li>{% else %}<li class="muted small">No activity in 7 days.</li>{% endfor %}</ul></section>
+  {{ kpi("Entries", "{:,}".format(stats.total), "append-only, hash-chained", None, "info", "list") }}
+  {{ kpi("Last 24 hours", "{:,}".format(stats.day), stats.actors ~ " actors in 7 days", None, "info", "pulse") }}
+  {{ kpi("Chain integrity", ("Intact" if verification[0] else "BROKEN") if verification else "Not checked",
+         ("{:,}".format(verification[1]) ~ " entries verified") if verification else "click Verify chain integrity", "/audit-log?verify=1",
+         ("good" if verification[0] else "critical") if verification else "warning", "shield") }}
+</div>
 <form class="filters" method="get">
   <div class="field"><label for="actor">Actor</label><input id="actor" name="actor" value="{{ actor }}"></div>
   <div class="field"><label for="action">Action prefix</label><input id="action" name="action" value="{{ action }}" placeholder="change."></div>

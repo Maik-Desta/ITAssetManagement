@@ -292,13 +292,28 @@ def milestone_update(request: Request, db: DB, user: CurrentUser, mid: int, actu
 
 @router.get("/kpis")
 def kpis(request: Request, db: DB, user: CurrentUser):
-    return render(request, "kpis.html", user, kpis=dash_svc.kpis(db))
+    rows = dash_svc.kpis(db)
+    met = sum(1 for k in rows if k["met"] is True)
+    missed = sum(1 for k in rows if k["met"] is False)
+    return render(request, "kpis.html", user, kpis=rows, met=met, missed=missed, nodata=len(rows) - met - missed)
 
 
 @router.get("/data-quality")
 def data_quality(request: Request, db: DB, user: CurrentUser):
     branches = db.execute(scope_branches(user, select(Branch).order_by(Branch.code))).scalars().all()
     rows = [r for r in audit_svc.league_table(db, branches) if r["assets"]]
-    return render(request, "data_quality.html", user, rows=rows,
+    scored = [r["score"] for r in rows if r["score"] is not None]
+    comp = [r["completeness"] for r in rows if r["completeness"] is not None]
+    bands = {"top": sum(1 for s in scored if s >= 95), "good": sum(1 for s in scored if 90 <= s < 95),
+             "fair": sum(1 for s in scored if 80 <= s < 90), "poor": sum(1 for s in scored if s < 80),
+             "none": sum(1 for r in rows if r["score"] is None)}
+    from itam.web.deps import mix
+
+    dq = {"avg": round(sum(scored) / len(scored), 1) if scored else None,
+          "completeness": round(sum(comp) / len(comp), 1) if comp else None,
+          "never": sum(1 for r in rows if not r["last_audit"]), "below": bands["fair"] + bands["poor"],
+          "mix": mix(bands, [("top", "Score ≥ 95", "good"), ("good", "90–95", "info"), ("fair", "80–90", "transit"),
+                             ("poor", "< 80", "critical"), ("none", "Not scored", "neutral")])}
+    return render(request, "data_quality.html", user, rows=rows, dq=dq,
                   audits_due=db.execute(select(func.count(PhysicalAudit.id)).where(
                       PhysicalAudit.status == AuditStatus.SCHEDULED.value)).scalar_one())

@@ -1,12 +1,27 @@
 {% extends "base.html" %}
+{% from "macros.html" import kpi with context %}
+{% from "charts.html" import donut, gauge with context %}
 {% block title %}KPIs{% endblock %}
 {% block content %}
-<div class="page-head"><div><h1>Programme KPIs</h1><p>Cadence: weekly PMO status, monthly Programme Board, quarterly Steering Committee · computed live from the platform</p></div></div>
-<section class="card"><div class="table-wrap"><table>
-  <thead><tr><th>KPI</th><th>Definition</th><th>Current</th><th>Target</th><th>Status</th><th>Reported to</th></tr></thead>
-  <tbody>{% for k in kpis %}
-  <tr><td><strong>{{ k.name }}</strong></td><td class="secondary">{{ k.definition }}</td><td class="nowrap"><strong>{{ k.display }}</strong></td><td class="nowrap">{{ k.target }}</td>
-    <td class="nowrap">{% if k.met is none %}<span class="badge"><span class="dot"></span>No data</span>{% elif k.met %}<span class="badge"><span class="dot good"></span>On target</span>{% else %}<span class="badge"><span class="dot critical"></span>Off target</span>{% endif %}</td>
-    <td>{{ k.reported_to }}</td></tr>
-  {% endfor %}</tbody></table></div></section>
+<div class="page-head"><div><h1>Programme KPIs</h1><p>Computed live from the platform · weekly PMO status, monthly Programme Board, quarterly Steering Committee</p></div></div>
+<div class="cc-grid cc-grid-flat">
+  <section class="w"><header class="w-head"><h2>KPIs on target</h2></header>
+    {{ gauge((100 * met / (met + missed)) | round(1) if (met + missed) else none, 100, "on target") }}
+    <div class="w-split"><div><strong class="pass">{{ met }}</strong><span>on target</span></div><div><strong class="fail">{{ missed }}</strong><span>off target</span></div>
+      <div><strong>{{ nodata }}</strong><span>no data yet</span></div></div></section>
+  <section class="w"><header class="w-head"><h2>Scorecard</h2></header>
+    {{ donut([{"label": "On target", "n": met, "tone": "good"}, {"label": "Off target", "n": missed, "tone": "critical"},
+              {"label": "No data yet", "n": nodata, "tone": "neutral"}], kpis | length, "KPIs") }}</section>
+  <section class="w w-wide"><header class="w-head"><h2>Needs attention</h2></header>
+    <ol class="risk-list">{% for k in kpis if k.met is false %}
+      <li><span class="kpi-miss"><strong>{{ k.name }}</strong> · {{ k.display }} <small>target {{ k.target }}</small></span><small>{{ k.reported_to }}</small></li>
+    {% else %}<li class="muted small">Every KPI with data is on target.</li>{% endfor %}</ol></section>
+</div>
+<div class="kpi-grid kpi-grid-auto kpi-board">
+{% for k in kpis %}
+  {{ kpi(k.name, k.display, k.definition ~ " · target " ~ k.target ~ " · " ~ k.reported_to, None,
+         "info" if k.met is none else "good" if k.met else "critical",
+         "check" if k.met else "alert" if k.met is false else "gauge") }}
+{% endfor %}
+</div>
 {% endblock %}

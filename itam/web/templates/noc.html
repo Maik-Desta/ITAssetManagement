@@ -63,6 +63,63 @@
 </div>
 
 {# ---- Cases by escalation level ---- #}
+<nav class="board-tabs no-print" aria-label="NOC views" data-board-tabs>
+  <button type="button" data-view="incidents" aria-pressed="true"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l10 18H2L12 3zM12 10v4M12 17v.5"/></svg>Open incidents <span class="tab-n">{{ n.incidents | length }}</span></button>
+  <button type="button" data-view="escalation" aria-pressed="false"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>Escalation</button>
+  <button type="button" data-view="affected" aria-pressed="false"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 8l-9-5-9 5 9 5 9-5zM3 8v8l9 5 9-5V8M12 13v8"/></svg>Affected assets</button>
+  <button type="button" data-view="performance" aria-pressed="false"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21a9 9 0 100-18 9 9 0 000 18zM12 7v5l3 2"/></svg>Performance &amp; reporting</button>
+</nav>
+<div class="board-view" data-view="incidents">
+{# ---- Incidents grouped by branch ---- #}
+<h2 class="section-title" id="incidents">Open incidents — grouped by branch ({{ n.incidents | length }})</h2>
+<div class="fit-scroll">
+{% for g in n.incidents %}{% set lead = g.lead %}
+<section class="incident incident-{{ g.severity }} {{ 'flash-critical' if g.critical_unacked }}">
+  <header class="inc-head">
+    <div class="inc-title">
+      {{ impact_badge(g.severity) }}
+      <h3>{% if g.branch %}<a href="/branches/{{ g.branch.id }}">{{ g.branch.code }} {{ g.branch.name }}</a> <span class="muted small">{{ g.branch.region.code }}</span>{% else %}Estate-wide{% endif %}</h3>
+      {% if g.offline %}<span class="badge"><span class="dot critical"></span>Branch offline</span>{% endif %}
+      {% if g.ceo %}<span class="badge ceo-badge">★ CEO informed</span>{% endif %}
+    </div>
+    <div class="inc-meta">{{ g.alerts | length }} alert{{ "s" if g.alerts | length != 1 }} · {{ g.assets | length }} asset{{ "s" if g.assets | length != 1 }} affected · started {{ g.age_min | duration }} ago ·
+      {% if g.unacked %}<span class="fail">{{ g.unacked }} awaiting response</span>{% else %}<span class="pass">✓ all acknowledged</span>{% endif %}</div>
+  </header>
+  <div class="inc-body">
+    <div class="inc-esc">
+      <div class="inc-label">Escalation — {{ lead.alert.ticket_ref or "" }}</div>
+      {{ escalation_stepper(lead.path, True) }}
+      <div class="inc-label">Notifications sent</div>
+      {{ channel_chips(lead.channels) }}
+    </div>
+    <div class="inc-alerts">
+      <table><tbody>
+      {% for r in g.alerts %}{% set a = r.alert %}
+        <tr>
+          <td>{{ sev(a.severity) }}</td>
+          <td><a href="/alerts/{{ a.id }}">{{ a.title }}</a>
+            <div class="muted small">{{ a.category.replace("_", " ").title() }}{% if a.asset %} · <span class="mono">{{ a.asset.asset_number }}</span>{% endif %} · {{ r.age_min | duration }} · reached {{ ["L1", "L2", "L3", "CEO"][a.escalation_level] }}{% if r.ceo and a.escalation_level < 3 %} + CEO{% endif %}</div></td>
+          <td class="sla-cell">{{ sla_badge(r.sla) }}
+            {% if a.status == "ACKNOWLEDGED" %}<div class="small muted">by {{ a.acknowledged_by.full_name if a.acknowledged_by else "—" }}</div>{% endif %}</td>
+          <td class="nowrap right">
+            {% if a.status == "OPEN" and can(user, "alert.respond") %}
+            <form method="post" action="/alerts/{{ a.id }}/ack" class="inline">{{ csrf() }}<input type="hidden" name="next" value="/noc"><button class="btn small primary" type="submit">Acknowledge</button></form>
+            {% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody></table>
+    </div>
+  </div>
+</section>
+{% else %}
+<section class="card all-clear"><h2>✓ All clear</h2><p class="muted">No open incidents in your area.</p></section>
+{% endfor %}
+</div>
+
+</div>
+<div class="board-view" data-view="escalation">
+<div class="fit-scroll">
 <section class="card">
   <div class="page-head"><div><h2>Open cases by escalation level</h2>
     <p class="muted small">Where each open case sits now: the highest level that has been notified. Red pulsing = critical case not yet acknowledged.</p></div>
@@ -125,56 +182,14 @@
     </tbody>
   </table></div>
 </section>
+</div>
 
-{# ---- Incidents grouped by branch ---- #}
-<h2 class="section-title" id="incidents">Open incidents — grouped by branch ({{ n.incidents | length }})</h2>
-{% for g in n.incidents %}{% set lead = g.lead %}
-<section class="incident incident-{{ g.severity }} {{ 'flash-critical' if g.critical_unacked }}">
-  <header class="inc-head">
-    <div class="inc-title">
-      {{ impact_badge(g.severity) }}
-      <h3>{% if g.branch %}<a href="/branches/{{ g.branch.id }}">{{ g.branch.code }} {{ g.branch.name }}</a> <span class="muted small">{{ g.branch.region.code }}</span>{% else %}Estate-wide{% endif %}</h3>
-      {% if g.offline %}<span class="badge"><span class="dot critical"></span>Branch offline</span>{% endif %}
-      {% if g.ceo %}<span class="badge ceo-badge">★ CEO informed</span>{% endif %}
-    </div>
-    <div class="inc-meta">{{ g.alerts | length }} alert{{ "s" if g.alerts | length != 1 }} · {{ g.assets | length }} asset{{ "s" if g.assets | length != 1 }} affected · started {{ g.age_min | duration }} ago ·
-      {% if g.unacked %}<span class="fail">{{ g.unacked }} awaiting response</span>{% else %}<span class="pass">✓ all acknowledged</span>{% endif %}</div>
-  </header>
-  <div class="inc-body">
-    <div class="inc-esc">
-      <div class="inc-label">Escalation — {{ lead.alert.ticket_ref or "" }}</div>
-      {{ escalation_stepper(lead.path, True) }}
-      <div class="inc-label">Notifications sent</div>
-      {{ channel_chips(lead.channels) }}
-    </div>
-    <div class="inc-alerts">
-      <table><tbody>
-      {% for r in g.alerts %}{% set a = r.alert %}
-        <tr>
-          <td>{{ sev(a.severity) }}</td>
-          <td><a href="/alerts/{{ a.id }}">{{ a.title }}</a>
-            <div class="muted small">{{ a.category.replace("_", " ").title() }}{% if a.asset %} · <span class="mono">{{ a.asset.asset_number }}</span>{% endif %} · {{ r.age_min | duration }} · reached {{ ["L1", "L2", "L3", "CEO"][a.escalation_level] }}{% if r.ceo and a.escalation_level < 3 %} + CEO{% endif %}</div></td>
-          <td class="sla-cell">{{ sla_badge(r.sla) }}
-            {% if a.status == "ACKNOWLEDGED" %}<div class="small muted">by {{ a.acknowledged_by.full_name if a.acknowledged_by else "—" }}</div>{% endif %}</td>
-          <td class="nowrap right">
-            {% if a.status == "OPEN" and can(user, "alert.respond") %}
-            <form method="post" action="/alerts/{{ a.id }}/ack" class="inline">{{ csrf() }}<input type="hidden" name="next" value="/noc"><button class="btn small primary" type="submit">Acknowledge</button></form>
-            {% endif %}
-          </td>
-        </tr>
-      {% endfor %}
-      </tbody></table>
-    </div>
-  </div>
-</section>
-{% else %}
-<section class="card all-clear"><h2>✓ All clear</h2><p class="muted">No open incidents in your area.</p></section>
-{% endfor %}
-
+</div>
+<div class="board-view" data-view="affected">
 {# ---- Affected assets per region / branch ---- #}
 <h2 class="section-title" id="affected">Affected assets by region and branch</h2>
 {% if n.affected %}
-<div class="grid grid-2">
+<div class="grid grid-2 fit-scroll">
 {% for reg in n.affected %}
   <section class="card">
     <div class="page-head"><h2>{{ reg.region.code }} · {{ reg.region.name }}</h2>
@@ -192,6 +207,9 @@
 </div>
 {% else %}<section class="card all-clear"><p class="muted">No assets are down or degraded.</p></section>{% endif %}
 
+</div>
+<div class="board-view" data-view="performance">
+<div class="fit-scroll">
 {# ---- Performance ---- #}
 <h2 class="section-title" id="performance">Response &amp; resolution — last {{ n.window_days }} days</h2>
 <div class="grid grid-2">
@@ -234,5 +252,7 @@
   </form>
   {% else %}<p class="muted small">Only NOC analysts can log incidents.</p>{% endif %}
 </details>
+</div>
+</div>
 {% endif %}
 {% endblock %}

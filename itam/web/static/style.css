@@ -981,7 +981,7 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 .controls li.warn strong { color: var(--warning-text); }
 
 /* iPad / laptop / iPhone */
-@media (max-width: 1400px) { .cc-kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 1180px) { .cc-kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 @media (max-width: 1180px) {
   .cc-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .w-map { grid-column: 1 / -1; grid-row: auto; }
@@ -1014,4 +1014,124 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
   .theme-toggle { padding: 0 8px; }
   .btn.menu-toggle { padding: 5px 9px; }
   .cc-title h1 { font-size: 1.3rem; }
+}
+
+
+/* =============================================================================================
+   One look on every page: section label, glowing framed panels, compact KPI boards.
+   ============================================================================================= */
+:root { --glow: color-mix(in srgb, var(--accent) 22%, transparent); --edge: color-mix(in srgb, var(--accent) 26%, var(--win-border)); }
+:root[data-theme="dark"] { --glow: color-mix(in srgb, var(--accent) 34%, transparent); }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --glow: color-mix(in srgb, var(--accent) 34%, transparent); } }
+
+.page-eyebrow { margin: 0 0 2px; display: flex; align-items: center; gap: 7px; font-size: .68rem; font-weight: 700;
+  letter-spacing: .12em; text-transform: uppercase; color: var(--accent); }
+.page-head h1 { font-size: 1.55rem; }
+
+/* Panels: a clear, softly lit frame with a glow that brightens on hover. */
+.card, .w, .kpi, .mix-card, .filters, .tile, .cc-boards, .board-tabs, .callout {
+  border-color: var(--edge);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 6%, transparent), 0 10px 28px -14px var(--glow), var(--shadow-1);
+}
+.card:hover, .w:hover, .mix-card:hover, .kpi:hover {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--win-border));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 14%, transparent), 0 14px 36px -12px var(--glow), var(--shadow-2);
+}
+.kpi.tone-critical { border-color: color-mix(in srgb, var(--critical) 45%, var(--win-border));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--critical) 12%, transparent), 0 10px 30px -12px color-mix(in srgb, var(--critical) 40%, transparent), var(--shadow-1); }
+.table-wrap { border-color: var(--edge); }
+.card::after { background: var(--edge); }
+
+/* Flat board grid for pages without a map; compact KPI boards. */
+.cc-grid-flat { grid-template-columns: repeat(4, minmax(0, 1fr)); margin-bottom: 12px; }
+.cc-grid-flat .w-wide { grid-column: span 2; }
+.cc-grid-flat > .w:last-child:not(.w-wide) { grid-column: auto; }
+.kpi-board { grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); }
+.kpi-board .kpi-value { font-size: 1.45rem; }
+.kpi-board .kpi-sub { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.kpi-miss { font-size: .82rem; color: var(--text-primary); }
+.kpi-miss small { color: var(--text-muted); }
+
+/* Lists sit closer to the top: shorter gaps on every page. */
+.summary-band, .kpi-grid { margin-bottom: 10px; }
+.filters { margin-bottom: 10px; padding: 8px 12px; }
+.tabs { margin-bottom: 10px; }
+@media (max-width: 1180px) { .cc-grid-flat { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 700px) { .cc-grid-flat { grid-template-columns: minmax(0, 1fr); } .cc-grid-flat .w-wide { grid-column: auto; } }
+
+/* Command centre density: everything on one desktop screen. */
+@media (min-width: 1181px) {
+  .cc-head { margin-bottom: 8px; }
+  .content[data-section="dashboard"] { padding-bottom: 14px; }
+  .cc-kpis { margin-bottom: 10px; gap: 8px; }
+  .cc-kpis .kpi { padding: 9px 12px 8px; }
+  .cc-kpis .kpi-value { font-size: 1.4rem; }
+  .cc-grid { gap: 10px; }
+  .w { padding: 10px 12px; gap: 6px; }
+  .cmr-map { max-height: calc(100vh - 440px); min-height: 300px; }
+  .trend { max-height: 148px; }
+  .cc-kpis .kpi-sub { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .gauge { max-width: 170px; }
+  .donut { width: 104px; height: 104px; }
+  .risk-list { max-height: 176px; }
+  .w-foot { display: none; }
+  .kpi-board .kpi { padding: 10px 12px; }
+  .kpi-board .kpi-sub { -webkit-line-clamp: 2; }
+  .pipe { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+  .pipe a { padding: 6px 8px; }
+  .pipe a strong { font-size: 1.2rem; }
+  .w .risk-list { max-height: 150px; overflow: auto; }
+  .cc-grid-flat .w { min-height: 0; }
+  .cc-grid-flat .risk-list { max-height: 168px; }
+  .controls { gap: 4px; }
+  .controls li { padding: 3px 9px; line-height: 1.25; }
+  .controls li small { display: none; }
+  .w-wide3 .trend { max-height: 120px; }
+  .w-wide3 .chart-legend { margin-top: 0; }
+}
+@media (min-width: 1300px) {
+  .kpi-board { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+  .kpi-board .kpi-value { font-size: 1.25rem; }
+}
+
+.fit-scroll { overflow: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+.fit-scroll > .incident + .incident { margin-top: 10px; }
+.w-wide3 { grid-column: span 3; }
+details.card > summary { cursor: pointer; list-style: none; }
+details.card > summary::-webkit-details-marker { display: none; }
+details.card > summary::after { content: "Show ▾"; margin-left: auto; font-weight: 600; letter-spacing: 0; text-transform: none; color: var(--accent); }
+details.card[open] > summary::after { content: "Hide ▴"; }
+details.card:not([open]) { padding-bottom: 0; }
+.tab-n { margin-left: 2px; padding: 0 7px; border-radius: 999px; font-size: .72rem; background: color-mix(in srgb, currentColor 18%, transparent); }
+@media (max-width: 1180px) { .w-wide3 { grid-column: 1 / -1; } }
+@media (max-width: 700px) { .w-wide3 { grid-column: auto; } }
+
+/* Short laptop screens (≤ 860px tall): tighten charts so every board still fits one screen. */
+@media (min-width: 1181px) and (max-height: 860px) {
+  .gauge { max-width: 132px; }
+  .donut { width: 88px; height: 88px; }
+  .donut-legend { font-size: .72rem; gap: 2px; }
+  .trend { max-height: 108px; }
+  .w .risk-list { max-height: 112px; }
+  .w-split strong { font-size: 1rem; }
+  .w-split span { font-size: .66rem; }
+  .w-wide3 .trend { max-height: 84px; }
+  .pipe a { padding: 4px 8px; gap: 0; }
+  .pipe a strong { font-size: 1.05rem; }
+  .pipe a span { font-size: .7rem; }
+  .controls li { padding: 2px 9px; font-size: .74rem; }
+  .controls li strong { font-size: .95rem; }
+  .w { gap: 4px; }
+}
+
+/* NOC: compact header strip so the live incident list keeps most of the screen. */
+@media (min-width: 1181px) {
+  .content[data-section="noc"] { padding-bottom: 14px; }
+  .content[data-section="noc"] .outage-banner { padding: 8px 14px; margin-bottom: 10px; }
+  .content[data-section="noc"] .kpi-grid { gap: 8px; margin-bottom: 10px; }
+  .content[data-section="noc"] .kpi { padding: 8px 12px; gap: 2px; }
+  .content[data-section="noc"] .kpi-value { font-size: 1.35rem; }
+  .content[data-section="noc"] .kpi-icon { width: 26px; height: 26px; padding: 5px; }
+  .content[data-section="noc"] .kpi-sub { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .content[data-section="noc"] .kpi-grid-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }

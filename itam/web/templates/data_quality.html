@@ -1,7 +1,16 @@
 {% extends "base.html" %}
+{% from "macros.html" import kpi, mix_bar with context %}
 {% block title %}Data quality{% endblock %}
 {% block content %}
 <div class="page-head"><div><h1>Data-quality league table</h1><p>Monthly score per branch: completeness of mandatory fields (60%) and last physical-audit accuracy (40%) · {{ audits_due }} audits scheduled</p></div></div>
+<div class="summary-band">
+  <section class="mix-card">{{ mix_bar(dq.mix, "Branches by data-quality score") }}</section>
+  {{ kpi("Average score", dq.avg if dq.avg is not none else "—", "completeness 60% · audit accuracy 40%", None,
+         "good" if (dq.avg or 0) >= 95 else "warning", "target") }}
+  {{ kpi("Field completeness", dq.completeness if dq.completeness is not none else "—", "mandatory fields filled, average", None,
+         "good" if (dq.completeness or 0) >= 98 else "warning", "list", None, "%" if dq.completeness is not none else "") }}
+  {{ kpi("Below 90", dq.below, dq.never ~ " branches never audited", "/audits", "critical" if dq.below else "good", "alert") }}
+</div>
 <section class="card"><div class="table-wrap"><table>
   <thead><tr><th class="num">Rank</th><th>Branch</th><th class="num">Assets</th><th>Completeness</th><th class="num">Audit accuracy</th><th>Last audit</th><th class="num">Score</th></tr></thead>
   <tbody>{% for r in rows %}

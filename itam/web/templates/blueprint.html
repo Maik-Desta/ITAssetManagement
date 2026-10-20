@@ -24,9 +24,9 @@
   </tbody></table></div>
   <p class="small muted">Held / required. Short quantities (grey) are normal before a branch is fully rolled out; above-blueprint (red), non-catalogue kit and unapproved devices need action.</p>
 </section>
-<section class="card">
-  <h2>Approved catalogue</h2>
+<details class="card">
+  <summary>Approved catalogue · {{ models | length }} models</summary>
   <div class="table-wrap"><table><thead><tr><th>Type</th><th>Model</th><th>End of support</th></tr></thead><tbody>{% for m in models %}<tr><td>{{ TYPE_LABELS[m.asset_type] }}</td><td>{{ m.display }}</td><td class="small muted nowrap">{{ m.eos_date | d }}</td></tr>{% endfor %}</tbody></table></div>
   {% if can_manage %}<p class="small"><a href="/admin/reference">Manage the catalogue</a></p>{% endif %}
-</section>
+</details>
 {% endblock %}

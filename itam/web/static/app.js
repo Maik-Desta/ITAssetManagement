@@ -303,10 +303,11 @@ document.querySelectorAll("[data-print]").forEach(function (b) {
   var buttons = Array.prototype.slice.call(bar.querySelectorAll("button[data-view]"));
   document.body.classList.add("has-board-views");
   function show(name, focusTarget) {
-    if (!views.some(function (v) { return v.dataset.view === name; })) name = "overview";
+    if (!views.some(function (v) { return v.dataset.view === name; })) name = views[0].dataset.view;
     views.forEach(function (v) { v.hidden = v.dataset.view !== name; });
     buttons.forEach(function (b) { b.setAttribute("aria-pressed", String(b.dataset.view === name)); });
-    try { sessionStorage.setItem("itam-board-view", name); } catch (e) { /* not remembered */ }
+    try { sessionStorage.setItem("itam-view:" + location.pathname, name); } catch (e) { /* not remembered */ }
+    document.dispatchEvent(new Event("itam:view"));
     if (focusTarget) focusTarget.scrollIntoView({ block: "start" });
   }
   function fromHash() {
@@ -320,7 +321,37 @@ document.querySelectorAll("[data-print]").forEach(function (b) {
   window.addEventListener("hashchange", fromHash);
   if (!fromHash()) {
     var saved = null;
-    try { saved = sessionStorage.getItem("itam-board-view"); } catch (e) { /* default view */ }
-    show(saved || "overview");
+    try { saved = sessionStorage.getItem("itam-view:" + location.pathname); } catch (e) { /* default view */ }
+    show(saved || views[0].dataset.view);
   }
+})();
+
+// Fit each page to one screen: table scroll boxes give up height (down to a readable minimum) until the
+// page is no taller than the window; the last one also grows to use any space left below it.
+(function () {
+  "use strict";
+  var all = Array.prototype.slice.call(document.querySelectorAll(".table-scroll, .fit-scroll"));
+  if (!all.length) return;
+  var MIN = 220;
+  function fit() {
+    all.forEach(function (b) { b.style.maxHeight = ""; });
+    if (window.innerWidth <= 760) return;
+    var boxes = all.filter(function (b) { return b.offsetParent !== null && !b.parentElement.closest(".table-scroll, .fit-scroll"); });
+    if (!boxes.length) return;
+    var last = boxes[boxes.length - 1];
+    var spare = window.innerHeight - document.documentElement.scrollHeight;
+    if (spare > 0) {
+      last.style.maxHeight = (last.clientHeight + spare - 4) + "px";
+      return;
+    }
+    var over = -spare + 4;
+    boxes.slice().sort(function (a, b) { return b.clientHeight - a.clientHeight; }).forEach(function (b) {
+      if (over <= 0) return;
+      var give = Math.min(over, Math.max(0, b.clientHeight - MIN));
+      if (give > 0) { b.style.maxHeight = (b.clientHeight - give) + "px"; over -= give; }
+    });
+  }
+  fit();
+  window.addEventListener("resize", fit);
+  document.addEventListener("itam:view", fit);
 })();

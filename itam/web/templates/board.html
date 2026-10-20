@@ -154,12 +154,12 @@
       <li class="{{ 'ok' if (d.clips.REQUESTED or 0) == 0 else 'warn' }}"><strong>{{ d.clips.ARCHIVED or 0 }}</strong><span>camera clips hashed as evidence <small>{{ (d.clips.REQUESTED or 0) + (d.clips.NOT_CONFIGURED or 0) }} pending</small></span></li>
       <li class="{{ 'ok' if (d.rfid.unmatched_installs or 0) == 0 else 'bad' }}"><strong>{{ d.rfid.unmatched_installs }}</strong><span>installs without manifest match</span></li>
     </ul></section>
-  <section class="w w-wide"><header class="w-head"><h2>Security events per week</h2><span class="w-note">last 8 weeks</span></header>
-    {{ trend(d.trend, "security", "Security alarms", "outages", "Outages") }}</section>
   <section class="w"><header class="w-head"><h2>Riskiest regions</h2></header>
     <ul class="hbars">{% set rs = d.regions | sort(attribute="risk", reverse=True) %}{% set top = [rs[0].risk if rs else 1, 1] | max %}{% for r in rs[:5] %}<li><a href="/branches?region={{ r.code }}"><span class="hb-label">{{ r.name }}</span>
       <span class="hb-track"><svg viewBox="0 0 100 8" preserveAspectRatio="none" aria-hidden="true"><rect class="hb-bg" width="100" height="8" rx="4"/>{% if r.risk %}<rect class="hb-fill tone-{{ 'critical' if r.security else 'transit' }}" width="{{ [100 * r.risk / top, 2] | max }}" height="8" rx="4"/>{% endif %}</svg></span>
       <span class="hb-value">{{ r.security }}<small>sec · {{ r.exceptions }} exc</small></span></a></li>{% endfor %}</ul></section>
+  <section class="w w-wide3"><header class="w-head"><h2>Security events per week</h2><span class="w-note">last 8 weeks</span></header>
+    {{ trend(d.trend, "security", "Security alarms", "outages", "Outages") }}</section>
 {% endif %}
 </div>
 {% endblock %}

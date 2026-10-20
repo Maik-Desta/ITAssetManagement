@@ -69,7 +69,16 @@
         </form>
       </div>
     </header>
-    <main class="content">
+    {%- set seg = "/" ~ (path.strip("/").split("/")[0] if path.strip("/") else "dashboard") -%}
+    {%- set sections = {"/dashboard": "Overview", "/noc": "Overview · 24/7 operations", "/kpis": "Overview · Programme",
+        "/assets": "Register · Assets", "/branches": "Register · Branches", "/requests": "Register · Procurement",
+        "/changes": "Register · Maker-checker", "/shipments": "Register · Staging & logistics", "/blueprint": "Register · Standards",
+        "/exceptions": "Assurance · Exceptions", "/audits": "Assurance · Physical audit", "/data-quality": "Assurance · Data",
+        "/reconciliation": "Assurance · Finance", "/controls": "Assurance · 3rd line of defence", "/audit-log": "Assurance · Evidence",
+        "/rollout": "Programme · Rollout", "/admin": "Administration", "/alerts": "Overview · Incident", "/account": "Account",
+        "/labels": "Register · Labels", "/notifications": "Overview · Notifications"} -%}
+    <main class="content" data-section="{{ seg.strip('/') }}">
+      {% if seg not in ("/dashboard", "/noc") and sections.get(seg) %}<p class="page-eyebrow"><span class="live-dot" aria-hidden="true"></span>{{ settings.bank_name }} · {{ sections[seg] }}</p>{% endif %}
       {% for category, message in messages %}
         <div class="flash {{ category }}" role="status">{{ message }}</div>
       {% endfor %}
